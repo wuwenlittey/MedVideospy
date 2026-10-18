@@ -1,0 +1,411 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2027_conference,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{capt-of}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage[table]{xcolor}
+\usepackage{arydshln}
+\usepackage{wrapfig}
+\usepackage{needspace}
+\usepackage{fvextra}
+\usepackage[breakable,skins]{tcolorbox}
+\usepackage{ragged2e}
+\usetikzlibrary{positioning,arrows.meta}
+\definecolor{experiencepurple}{HTML}{F5F2FA}
+\definecolor{experienceyellow}{HTML}{FFFAEE}
+\definecolor{dialogueblue}{HTML}{F1F7FA}
+\definecolor{changeaccent}{HTML}{B22222}
+\tcbset{experience/.style={enhanced,breakable,boxrule=0.4pt,arc=2pt,
+  colframe=black!25,colbacktitle=white,coltitle=black,fonttitle=\bfseries\small,
+  left=7pt,right=7pt,top=3pt,bottom=3pt,before skip=8pt,after skip=8pt}}
+\newtcolorbox{MessageBox}[3][]{experience,unbreakable,colback=#2,title={#3},fonttitle=\sffamily\bfseries\TraceFont,fontupper=\sffamily\TraceFont,boxsep=1pt,left=4pt,right=4pt,top=1pt,bottom=1pt,toptitle=1pt,bottomtitle=1pt,before skip=2pt,after skip=2pt,before upper={\setlength{\parskip}{0pt}},width=\linewidth,#1}
+\tcbset{agent message/.style={width=0.97\linewidth,flush left,top=0pt,bottom=0pt,before skip=1pt,after skip=1pt},
+  other message/.style={width=0.97\linewidth,flush right,top=0pt,bottom=0pt,before skip=1pt,after skip=1pt},
+  loaded skill/.style={colframe=violet!50!black,colbacktitle=violet!12,boxrule=0.7pt}}
+\newtcolorbox{ExecutionBox}[4][]{enhanced,unbreakable,colback=white,colframe=#2,colbacktitle=#3,coltitle=black,title={#4},fonttitle=\bfseries\small,boxrule=0.8pt,arc=2pt,boxsep=1pt,left=3pt,right=3pt,top=1pt,bottom=1pt,toptitle=1pt,bottomtitle=1pt,before skip=3pt,after skip=3pt,before upper={\setlength{\parskip}{0pt}},#1}
+\newcommand{\TraceFont}{\fontsize{8}{9.5}\selectfont}
+\DefineVerbatimEnvironment{Trajectory}{Verbatim}{fontsize=\TraceFont,fontfamily=phv,formatcom={\fontencoding{T1}\selectfont},breaklines=true,breakanywhere=false,breaksymbolleft={},breaksymbolright={},breakindent=0pt,breakautoindent=false,listparameters={\setlength{\topsep}{0pt}\setlength{\partopsep}{0pt}}}
+\newtcolorbox{VideoStrip}{enhanced,colback=black!8,frame hidden,sharp corners,boxrule=0pt,
+  boxsep=0pt,left=0pt,right=0pt,top=0pt,bottom=0pt,before skip=0pt,after skip=2pt}
+\newcommand{\VideoStripFrame}[1]{\includegraphics[width=\dimexpr(\linewidth-6pt)/4\relax]{#1}}
+\newcommand{\VideoStripLabel}[1]{\parbox[t]{\dimexpr(\linewidth-6pt)/4\relax}{\centering\sffamily\fontsize{7}{8}\selectfont\color{black!65}#1}}
+\input{table}
+
+\title{VideoSpy: Evolving through Experience for Adaptive Video Understanding}
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{Antiquus S.~Hippocampus, Natalia Cerebro \& Amelie P. Amygdale \thanks{ Use footnote for providing further information
+about author (webpage, alternative address)---\emph{not} for acknowledging
+funding agencies.  Funding acknowledgements go at the end of the paper.} \\
+Department of Computer Science\\
+Cranberry-Lemon University\\
+Pittsburgh, PA 15213, USA \\
+\texttt{\{hippo,brain,jen\}@cs.cranberry-lemon.edu} \\
+\And
+Ji Q. Ren \& Yevgeny LeNet \\
+Department of Computational Neuroscience \\
+University of the Witwatersrand \\
+Joburg, South Africa \\
+\texttt{\{robot,net\}@wits.ac.za} \\
+\AND
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email}
+}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+% \iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\begin{document}
+
+
+\maketitle
+
+\begin{abstract}
+Recent approaches to agentic video understanding are often tailored to domain-specific evidence requirements and task settings, limiting their adaptability across domains. A central bottleneck is that their task-solving strategies remain largely fixed after design, without a systematic mechanism for learning and evolving from execution experience. In this work, we investigate whether a foundational video agent can evolve from execution experience to adapt to different domains without redesigning its framework. To this end, we first build a foundational VideoSpy agent with three complementary visual tools: \texttt{overview}, \texttt{clip\_skim}, and \texttt{frame\_inspect}. A Reflector combines task-grouped reflection and evidence-based review to extract reusable experience from training execution records and ground-truth references. An Agent Optimizer loads the resulting \textit{Skill} and source-grounded \textit{Memory} into the shared agent harness, enabling the same foundational agent to specialize independently for each domain. To assess this mechanism, we establish a unified protocol for domain-specific evolution and held-out evaluation on LVBench, EgoLifeQA, and MedVidBench, covering general long videos, egocentric daily life, and medical videos. With Qwen3.5-4B, evolution raises accuracy by 3.8 and 4.2 percentage points on LVBench and EgoLifeQA, improves nine of ten MedVidBench leaderboard metrics, and reduces inference tokens by 9.7--27.1\%. These results show that a shared video agent can adapt to different domains by learning from execution experience.
+\end{abstract}
+
+\section{Introduction}
+
+Video understanding requires interpreting events, actions, and temporal relationships from visual content and, when available, accompanying language~\citep{huang2024lita,fu2025videomme}. Multimodal models have advanced visual-language alignment~\citep{lin2024videollava,bai2025qwen3vl} and long-video processing~\citep{shen2025longvu}. Agentic video understanding builds on these capabilities to gather evidence and reason through iterative tool use~\citep{wang2025videoagent,fan2025videoagent,jeoung2024avua}. A video agent must locate relevant evidence, organize its reasoning, and select appropriate tools, particularly when information is distributed across long sequences~\citep{zhang2025dvd,lin2026videoseek}. Its effectiveness therefore depends on both the underlying models and the strategies that guide their use.
+
+These strategies must accommodate diverse settings, including general long videos~\citep{wang2025lvbench,wu2024longvideobench}, egocentric daily-life videos~\citep{yang2025egolife}, and medical or surgical videos~\citep{su2026medgrpo,wang2026surgcot}. Different requirements for evidence retrieval, temporal reasoning, and specialized knowledge often motivate domain-specific agent designs~\citep{zhang2025dvd,fan2025embodiedvideoagent,low2026surgraw}. Although these agents can adapt their actions within a task, the strategies that guide execution are often fixed by design. This raises a central question: \emph{Can a foundational video agent evolve from execution experience to specialize in different domains without redesigning its framework?}
+
+Our work draws inspiration from animal learning: through trial and error, animals can accumulate memories and acquire skills while their overall body structure remains largely unchanged. A similar distinction between stable structure and adaptive state appears in neural network training (Figure~\ref{fig:training_analogy}(a)), where the architecture is typically fixed while weights are updated using prediction errors on labeled batches. We extend this distinction to video agents in Figure~\ref{fig:training_analogy}(b), with reflection on execution experience providing feedback for updates to \textit{Skill} and \textit{Memory}. Model weights and the core \emph{agent harness}, which coordinates the agent loop, tool sets, and context assembly, remain fixed. \textit{Skill} guides how to investigate, while \textit{Memory} supplies source-grounded facts and reusable cases. Ground-truth references support outcome assessment, and recorded observations ground the lessons drawn from each trajectory.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.98\linewidth]{../figures/deep-network-vs-agent-evolution-v7.pdf}
+    \caption{From neural network training to experience-driven agent evolution. (a) Loss measurement and backpropagation guide the optimizer to update network weights within a fixed architecture. (b) The Reflector combines task-grouped reflection with evidence-based review, and the Agent Optimizer loads reviewed experience, enabling domain specialization within a shared agent harness.}
+    \label{fig:training_analogy}
+\end{figure}
+
+Turning execution experience into strategies that generalize to new tasks requires preserving task context and filtering unsupported lessons.
+To this end, we introduce \textbf{VideoSpy}, a framework for experience-driven agent evolution that enables a common foundational video agent to specialize in different domains. We first build a foundational agent (VideoSpy$^{\mathbf{0}}$) around a ReAct~\citep{yao2023react} loop and three complementary visual tools: \texttt{overview}, \texttt{clip\_skim}, and \texttt{frame\_inspect}. The \textbf{Reflector} performs task-grouped reflection, comparing successful decisions with failure patterns across trajectories of the same task type and using ground-truth references to assess outcomes. Evidence-based review checks whether the extracted guidance and reasoning cases are supported and applicable. The \textbf{Agent Optimizer} selects relevant guidance and retrieves eligible facts and cases, integrating reviewed experience into subsequent execution to form the evolved agent (VideoSpy$^{\mathcal{E}}$).
+
+We establish a unified evolution and held-out evaluation protocol on LVBench~\citep{wang2025lvbench}, EgoLifeQA~\citep{yang2025egolife}, and MedVidBench~\citep{su2026medgrpo}. Each domain evolves independently from the same foundational agent, and evolved agents are frozen before test evaluation. Under matched evaluation conditions, the evolved Qwen3.5-4B agent improves task performance and reduces inference token usage across all three benchmarks. Ablations show that ungrouped reflection can harm accuracy and efficiency, while task-grouped reflection and evidence-based review improve both. Cross-model experiments further support pairing experience matched to the target agent with stronger reflection: a 27B Reflector achieves 46.3\% LVBench accuracy using 4B trajectories with inference fixed to 4B.
+
+Our main contributions are: (1) A video-agent evolution framework that adapts a common foundational agent to different domains through execution experience without redesigning its harness.
+(2) A Reflector that combines task-grouped reflection with evidence-based review, and an Agent Optimizer that integrates the reviewed experience into subsequent task execution.
+(3) A unified evolution and held-out evaluation protocol across three video domains, demonstrating performance and efficiency gains and assessing cross-model experience transfer.
+
+
+\section{Related Work}
+
+\paragraph{Video understanding tasks.}
+Given a video and a question or instruction, video understanding requires reasoning over visual events, temporal relationships, and optional language context to produce answers, descriptions, or spatiotemporal localizations~\citep{li2024mvbench,ren2024timechat,huang2024lita,wang2026surgcot,fu2025videomme,wu2024longvideobench}. Long-video benchmarks (e.g., LVBench~\citep{wang2025lvbench}) test evidence retrieval, multimodal integration, and temporal reasoning, while CG-Bench~\citep{chen2025cgbench} explicitly grounds answers in supporting video evidence. Egocentric benchmarks EgoSchema~\citep{mangalam2023egoschema} and EgoLifeQA~\citep{yang2025egolife} emphasize extended activity understanding and retrieval of personal experiences. Medical benchmarks MedVidBench~\citep{su2026medgrpo} and SurgCoT~\citep{wang2026surgcot} additionally require precise localization, procedural reasoning, and domain knowledge. These benchmarks expose different evidence requirements, motivating domain-specific evolution of a common foundational agent.
+
+\paragraph{Agentic video understanding.}
+Large models, including GPT-4o~\citep{openai2024gpt4o}, GPT-5~\citep{openai2025gpt5}, and Qwen3.5~\citep{qwenteam2026qwen35}, provide perception and reasoning capabilities for video agents. Approaches differ in how they organize and acquire evidence. Decomposed reasoning spans caption-based inference in LLoVi~\citep{zhang2024llovi}, stepwise reasoning in Video-of-Thought~\citep{fei2024videoofthought}, and role-based coordination in VideoMind~\citep{liu2026videomind}. Retrieval methods structure evidence as hierarchies, documents, or video collections~\citep{wang2025videotree,ma2025drvideo}. Active search methods, including VideoAgent~\citep{wang2025videoagent}, Deep Video Discovery~\citep{zhang2025dvd}, and VideoSeek~\citep{lin2026videoseek}, iteratively select frames or tools. Memory-based agents, including VideoAgent~\citep{fan2025videoagent}, GraphVideoAgent~\citep{chu2025graphvideoagent}, M3-Agent~\citep{long2026m3agent}, and WorldMM~\citep{yeo2026worldmm}, retain structured evidence for retrieval and reasoning. VideoSpy builds on these evidence-gathering capabilities by using training execution records and ground-truth references to learn reusable \textit{Skill} and \textit{Memory} for domain specialization.
+
+\paragraph{Agent reflection and self-improvement.}
+Agent reflection uses execution feedback to diagnose errors and revise subsequent behavior, as in Reflexion~\citep{shinn2023reflexion}, ExpeL~\citep{zhao2024expel}, and Agent-Pro~\citep{zhang2024agentpro}. Self-improvement extends iterative output refinement~\citep{madaan2023selfrefine} to persistent context updates in ACE~\citep{zhang2026ace} and optimization of prompts in TextGrad~\citep{yuksekgonul2025textgrad}, functions~\citep{zhang2024agentoptimizer}, and agent designs or workflows~\citep{hu2025adas,zhang2025aflow}. GEPA~\citep{agrawal2026gepa} uses reflection on execution traces to propose and evaluate prompt updates. Recursive self-improvement (RSI) further targets the improvement mechanism itself. STOP~\citep{zelikman2024stop} and Promptbreeder~\citep{fernando2024promptbreeder} optimize code improvers and prompt-mutation strategies, respectively, while the Darwin G\"odel Machine~\citep{zhang2026dgm} evolves agents that modify their own code. MetaVideoAgent~\citep{cui2026metavideoagent} brings automated evolution to video understanding through distribution-aware diagnosis and iterative code optimization. Our work studies domain specialization through reusable \textit{Skill} and \textit{Memory}. Task-grouped reflection and evidence-based review ground this experience in task context and recorded evidence, while the Agent Optimizer integrates it into a shared agent harness.
+
+\section{The VideoSpy Evolution Framework}
+
+Figure~\ref{fig:evolution_overview} summarizes the framework from domain-specific training tasks to domain-adapted agents. The foundational agent (VideoSpy$^{\mathbf{0}}$) executes each training task once using complementary visual tools, producing \textit{execution records} comprising trajectories, tool observations, and answers. The Reflector analyzes these records alongside ground-truth references to extract and review \textit{Skill} and \textit{Memory}. The Agent Optimizer performs experience selection and context assembly to obtain VideoSpy$^{\mathcal{E}}$.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{../figures/videospy-self-evolution-framework-v5.pdf}
+    \caption{The VideoSpy evolution framework. Training tasks are executed by VideoSpy$^{\mathbf{0}}$ with complementary visual tools to collect execution records. The Reflector extracts and verifies \textit{Skill} and \textit{Memory}, and the Agent Optimizer loads them into the prompt to obtain domain-adapted agents. Each domain evolves independently from the same foundational agent.}
+    \label{fig:evolution_overview}
+\end{figure}
+
+\subsection{Problem Formulation}
+
+Given training tasks $\mathcal{D}_{\mathrm{train}}=\{(x_i,y_i^*)\}_{i=1}^{N}$, each input $x_i=(v_i,s_i,q_i)$ contains a video, optional subtitles, and a question. The corresponding $y_i^*$ is a ground-truth reference for the task outcome. The agent receives only $x_i$ during execution and generates its own trajectory, which is subsequently assessed using $y_i^*$ during reflection. We write $\mathrm{VideoSpy}^{\mathbf{0}}=(F,\Theta_0)$, where $F$ comprises the fixed model and core agent harness, including the agent loop, prompt assembly, and tool interfaces, and $\Theta_0=(S_0,M_0)$ is its initial \textit{Skill} and \textit{Memory} state. The complete adaptation process is
+\begin{align}
+(\hat y_i,\tau_i) &= \mathrm{VideoSpy}^{\mathbf{0}}(x_i), \qquad i=1,\ldots,N, \\
+\mathcal{T} &= \{(x_i,\hat y_i,\tau_i,y_i^*)\}_{i=1}^{N}, \\
+(S^*,M^*) &= R(\mathcal{T};S_0,M_0), \\
+\mathrm{VideoSpy}^{\mathcal{E}} &= U(\mathrm{VideoSpy}^{\mathbf{0}};S^*,M^*).
+\end{align}
+Here, $\hat y_i$ is the predicted answer and $\tau_i$ is the execution record for task $i$. $\mathcal{T}$ collects these records together with the task inputs, predictions, and ground-truth references. $R$ denotes the Reflector, which performs reflection and review over $\mathcal{T}$, and $U$ denotes the Agent Optimizer, which loads the resulting experience into VideoSpy$^{\mathbf{0}}$ to obtain VideoSpy$^{\mathcal{E}}$.
+% The agent is updated once after reflection is complete; processing trajectory groups does not create successive training agents.
+
+\subsection{Foundational Video Agent}
+\label{sec:foundational}
+
+The foundational VideoSpy$^{\mathbf{0}}$ agent provides the evidence-gathering and reasoning capabilities on which evolution builds. A large multimodal model follows a ReAct loop to collect visual evidence through three complementary tools: \texttt{overview} samples the full video, \texttt{clip\_skim} examines a selected interval, and \texttt{frame\_inspect} checks original-resolution frames at specified timestamps. Each tool takes a text query to guide visual inspection, with an explicit time interval for \texttt{clip\_skim} and timestamps for \texttt{frame\_inspect}. Let $h_t$ denote the execution history before step $t$, initialized with the agent prompt and task input. Each evidence-gathering step follows
+\begin{equation}
+a_t \sim \pi_F(\cdot\mid h_t), \qquad
+o_t=\operatorname{Exec}(a_t;v), \qquad
+h_{t+1}=h_t\oplus(a_t,o_t),
+\end{equation}
+where $\pi_F$ is the fixed model's tool-use policy, $a_t$ contains the selected tool calls and their arguments, $o_t$ contains the returned observations, and $\oplus$ denotes appending to the history. When evidence collection ends or the step limit is reached, a separate model call without tools produces the final answer from the accumulated history. For task $i$, the tool calls and observations across multiple rounds, together with the final answer, form the execution record $\tau_i$ used for reflection.
+
+The same agent harness supports all target domains. Evolution from scratch starts with $S_0=M_0=\emptyset$. Evolution from VideoSpy$^{\mathbf{0}}$ to VideoSpy$^{\mathcal{E}}$ changes the loaded \textit{Skill} and \textit{Memory} content while keeping model weights, tool interfaces, and configured execution hyperparameters fixed.
+
+\subsection{Reflector: Task-Grouped Reflection and Evidence-based Review}
+\label{sec:reflector}
+
+The Reflector converts fixed execution records into \textit{Skill} and \textit{Memory} through task-grouped reflection, memory extraction, and evidence-based review (Figure~\ref{fig:evolution_overview}(b)). \textit{Skill} summarizes good practices to follow and pitfalls to avoid, while \textit{Memory} retains reusable facts and cases with sources.
+
+\paragraph{Task-grouped reflection.}
+The Reflector assigns each trajectory a score from 0 to 5 based on answer correctness, reasoning soundness, evidence support, and execution efficiency.
+Within each task type (e.g., region captioning in MedVidBench~\citep{su2026medgrpo}), a bounded sample balances the available score levels and is divided into groups mixing higher- and lower-scoring trajectories when available, without reuse. Each group includes the original trajectories, predictions, scores, and assessment reasons.
+
+For task type $k$, the Reflector processes groups $G_{k,1},\ldots,G_{k,J_k}$ sequentially, maintaining one working \textit{Skill} document:
+\begin{equation}
+W_{k,j}=\operatorname{Reflect}(W_{k,j-1},G_{k,j}),
+\qquad j=1,\ldots,J_k,
+\end{equation}
+where $W_{k,0}$ is the initial guidance or empty when evolving from scratch. Each group refines the draft by comparing effective practices and reasoning failures, preserving supported prior guidance while adding, qualifying, or removing claims as warranted by the evidence. The updated draft passes to the next group and remains linked to its sources. Without a substantive update, $W_{k,j}=W_{k,j-1}$.
+
+\paragraph{Memory extraction.}
+\textit{Memory} comprises facts and cases, extracted independently of \textit{Skill} sampling. Facts preserve original tool observations with their sources for reuse within the same video. Cases capture tasks, actions, and outcomes from successful, evidence-supported trajectories, focusing on how an action resolved a relevant uncertainty. They provide methodological examples that can transfer across videos.
+
+\paragraph{Evidence-based review.}
+After all groups are processed, \textit{Skill} is reviewed against its cited decisions and observations:
+\begin{equation}
+S_k^*=\operatorname{Review}(W_{k,J_k},E_k),
+\end{equation}
+where $E_k$ contains the cited evidence in its trajectory context. Review accepts cautions grounded in observed failures but rejects claims that untried remedies are effective. Unsupported claims, overgeneralizations, and scene-specific answers are removed or revised while preserving supported content. The retained content forms $S^*$.
+
+For \textit{Memory}, facts are checked against their source observations, while cases are reviewed against recorded actions and outcomes. These checks assess recorded evidence without re-inspecting the~video.
+
+\subsection{Agent Optimizer: Integrating Experience into Execution}
+\label{sec:optimizer}
+
+The Agent Optimizer converts the Reflector's outputs into the inference context of VideoSpy$^{\mathbf{0}}$, yielding VideoSpy$^{\mathcal{E}}$. As shown in Figure~\ref{fig:evolution_overview}(c), experience selection combines task matching and paragraph selection for \textit{Skill} with source/time filtering and semantic retrieval for \textit{Memory}. Context assembly appends the selected experience to the core system prompt before execution.
+
+\paragraph{Skill loading.}
+For a new task, the agent selects the matching \textit{Skill} content. The selected content is appended to the core system prompt in complete paragraphs. This guidance helps direct evidence gathering and judge when to answer, while the current question, observations, and tool constraints remain authoritative.
+
+\paragraph{Memory retrieval.}
+Facts and reviewed cases are deduplicated within compatible sources, embedded, and stored with their provenance. Before a task starts, retrieval filters entries by source and temporal eligibility, ranks the eligible entries by semantic similarity to the query, and appends selected top-k (3 by default) entries to the system prompt. Factual observations apply to their source video or timeline. Historical cases can transfer across videos within the same benchmark, but their scene facts do not describe the current video. Current observations take precedence, and memories unavailable at the query time are excluded.
+
+Writing $e(m,x)\in\{0,1\}$ for the source and temporal eligibility of memory entry $m$ for input $x$, the retrieval candidate set is $M_x=\{m\in M^*:e(m,x)=1\}$. With a fixed prompt assembly function $\Gamma$, the resulting initial prompt is
+\begin{equation}
+P(x)=\Gamma\bigl(P_{\mathrm{core}},
+\operatorname{MatchSkill}(S^*,x),
+\operatorname{RetrieveMemory}(M_x,x)\bigr).
+\end{equation}
+Here, $\operatorname{RetrieveMemory}$ ranks eligible entries by semantic similarity and selects content within the memory budget. Both components are loaded before task execution. VideoSpy$^{\mathcal{E}}$ then follows the same reasoning and tool-use loop as VideoSpy$^{\mathbf{0}}$, guided by the learned experience.
+
+\subsection{Evolution and Evaluation Protocol}
+\label{sec:evaluation_protocol}
+
+Our protocol separates experience collection and evolution from held-out evaluation. Each domain starts from the same VideoSpy$^{\mathbf{0}}$. For domain $d$, let $\mathcal{T}_{\mathrm{train}}^{(d)}$ contain only the execution records and ground-truth references from its training split. Each domain learns its own state while retaining the shared structure:
+\begin{equation}
+\Theta^{(d)}=R(\mathcal{T}_{\mathrm{train}}^{(d)};S_0,M_0),
+\qquad
+\mathrm{VideoSpy}^{\mathcal{E}}_d=U(\mathrm{VideoSpy}^{\mathbf{0}};S^{(d)},M^{(d)}),
+\end{equation}
+where $\Theta^{(d)}=(S^{(d)},M^{(d)})$. This state is frozen before evaluation on a test set separated from training by video, date, or source video.
+
+\section{Experiments}
+
+% Our experiments assess whether the same foundational agent can specialize across domains through experience, how task-grouped reflection and evidence-based review contribute, and how evolution affects task performance and inference cost. We further examine the retained experience, changes in execution behavior, and generalization across models.
+
+\subsection{Experimental Setup}
+\label{sec:experimental_setup}
+
+\paragraph{Datasets and metrics.}
+To evaluate experience-driven evolution, we independently evolve the same foundational VideoSpy$^{\mathbf{0}}$ for each domain using execution records and ground-truth references from training tasks. The Reflector extracts reusable experience, which the Agent Optimizer loads to form VideoSpy$^{\mathcal{E}}$. We then freeze the evolved state and compare the two agents on held-out tasks. We evaluate on LVBench~\citep{wang2025lvbench} for long-video evidence reasoning, EgoLifeQA~\citep{yang2025egolife} for egocentric daily activities, and MedVidBench~\citep{su2026medgrpo} for medical videos. Table~\ref{tab:data_splits} summarizes the training and test splits. We measure evolution gains using overall and per-type accuracy on LVBench and EgoLifeQA and the ten official task metrics on MedVidBench. We also report average inference rounds and token costs per task.
+
+\VideoSpySetupTable
+
+\paragraph{Baselines.}
+We compare with DVDAgent~\citep{zhang2025dvd}, VideoSeek~\citep{lin2026videoseek}, and WorldMM~\citep{yeo2026worldmm} that are primarily designed for long-video understanding. WorldMM further supports ultra-long egocentric video streams in EgoLifeQA through episodic, semantic, and visual memory. DVDAgent and WorldMM require offline construction of a video text index, whereas VideoSeek and our VideoSpy$^{\mathbf{0}}$ gather evidence directly from raw video. For the MedVidBench leaderboard test, we additionally include publicly reported results including Qwen2.5-VL-7B\textsubscript{Surg-CholecT50}~\citep{nvidia2025qwen25vlsurg} specialized for surgical video understanding.
+% Table~\ref{tab:method_comparison} distinguishes these settings, with offline construction costs reported separately from online inference in Appendix~\ref{app:method_comparison}.
+
+\paragraph{Implementation details.}
+We use Qwen3.5-4B~\citep{qwenteam2026qwen35} and Qwen3.8-27B~\citep{qwenteam2026qwen38}, abbreviated as 4B and 27B in tables. Within each execution, the agent and visual tools share the same backbone. The Reflector uses the same backbone by default, except in the cross-model experiments. We reproduce DVDAgent, WorldMM, and VideoSeek on our test splits. For DVDAgent on LVBench, we reuse existing GPT-4.1-generated offline captions. Across VideoSpy and all reproduced baselines, we use Qwen \textit{text-embedding-v4} (1,024 dimensions) wherever text embeddings are required for indexing and retrieval. VideoSpy uses a default limit of 16 rounds, after which it must produce a final answer without further tool calls. On the MedVidBench local test split, we consistently use Qwen3.5-4B as the judge for all LLM-based metrics.
+
+\subsection{Ablation Studies}
+\label{sec:ablations}
+
+% We ablate evolution components with VideoSpy$^{\mathbf{0}}$'s full tool set fixed. Visual-tool comparisons are in Appendix~\ref{app:visual_tools}.
+
+\VideoSpyAblationTable
+\VideoSpyComparisonTable
+
+
+\paragraph{Reflector.}
+Table~\ref{tab:ablation} shows that \textit{Skill} from ungrouped reflection lowers accuracy and increases token usage relative to VideoSpy$^{\mathbf{0}}$, suggesting that extracted guidance can be counterproductive. With review and \textit{Skill}-only loading fixed, task-grouped reflection raises accuracy from 36.5\% to 41.3\% on LVBench and from 31.6\% to 34.7\% on EgoLifeQA, while reducing token usage and outperforming the foundational agent on both measures. With task grouping and \textit{Skill}+\textit{Memory} loading fixed, reviewing \textit{Skill} and cases improves accuracy by 3.5 and 3.1 percentage points and reduces token usage by 17.5\% and 16.4\% on the two benchmarks, respectively. These results highlight the importance of organizing and verifying experience before reuse.
+
+\paragraph{Agent Optimizer.}
+With both Reflector components enabled, \textit{Skill} and \textit{Memory} each improve accuracy over VideoSpy$^{\mathbf{0}}$, while combining them achieves the highest accuracy with the fewest rounds and tokens on both benchmarks (Table~\ref{tab:ablation}(b)). This supports their complementary roles: \textit{Skill} guides how to investigate, while \textit{Memory} supplies reusable facts and cases.
+
+\subsection{Performance and Efficiency across Domains}
+\label{sec:performance}
+
+We assess whether domain-specific experience improves held-out performance and inference efficiency within a shared agent harness. Each evolved agent is compared with its foundational counterpart under fixed models, tools, and execution budgets. Tables~\ref{tab:method_comparison} and~\ref{tab:medical_comparison} report these comparisons alongside reproduced baselines and published leaderboard results.
+
+\VideoSpyMedicalTable
+
+\begin{table}[!t]
+\centering
+\setlength{\abovecaptionskip}{2pt}
+\setlength{\belowcaptionskip}{2pt}
+\begin{minipage}[t]{0.52\linewidth}
+\vspace{0pt}
+\VideoSpyTransferTable[0.90\linewidth]
+\end{minipage}\hfill
+\begin{minipage}[t]{0.45\linewidth}
+\vspace{0pt}
+\centering
+\small
+\captionof{figure}{Qwen3.5-4B on MedVidBench leaderboard test, with metric-specific scales.}
+\label{fig:medical_radar}
+\includegraphics[width=0.8\linewidth]{../figures/medvidbench_leaderboard_4B_radar.pdf}
+\par\nointerlineskip\vspace{1pt}
+{\scriptsize\textcolor[HTML]{4B7CA9}{\rule{4pt}{1.2pt}\kern1pt\rule{4pt}{1.2pt}}~VideoSpy$^{\mathbf{0}}$\quad
+\textcolor[HTML]{D57452}{\rule{9pt}{1.2pt}}~VideoSpy$^{\mathcal{E}}$\par}
+\end{minipage}
+\end{table}
+
+\paragraph{Long-video and egocentric understanding.}
+Evolution improves accuracy while reducing token usage on both benchmarks with both backbones (Table~\ref{tab:method_comparison}), supporting more effective evidence use through learned experience. LVBench gains around 4 percentage points at both 4B and 27B, showing that experience remains useful with a stronger backbone. EgoLifeQA gains are 4.2 and 1.0 points, respectively, indicating that the benefit varies with the domain and backbone. These improvements support adapting evidence-gathering strategies within a shared harness. Under the matched 4B backbone, VideoSpy$^{\mathcal{E}}$ also outperforms VideoSeek in accuracy and token usage. DVDAgent and WorldMM provide reference results under a different setting with prebuilt offline indices.
+
+\paragraph{Medical video understanding.}
+On the local MedVidBench split, gains in CVS (Critical View of Safety) scoring, captioning, and summarization across both backbones support adaptation to medical tasks within the shared harness (Table~\ref{tab:medical_comparison}). On the leaderboard test, 4B evolution improves nine of ten metrics (Figure~\ref{fig:medical_radar}) while reducing average token usage by 27.1\% (see Appendix), demonstrating more accurate and efficient specialization without changing model weights or tools. The evolved 4B agent exceeds same-backbone one-shot prompting on eight metrics, and GPT-4.1 and the surgical Qwen2.5-VL-7B\textsubscript{Surg-CholecT50} model on nine each.
+
+These baselines use one-shot prompting with a task-specific question--answer format example~\citep{su2026medgrpo}. VideoSpy uses no manually supplied question--answer demonstration and instead uses frozen \textit{Skill} and \textit{Memory} to guide iterative evidence gathering. The gains across most metrics support the effectiveness of experience-guided investigation, with task-specific exceptions: some metrics favor one-shot baselines, and skill assessment declines after evolution. Skill assessment requires judging execution quality, while grounding depends on precise spatial and temporal boundaries~\citep{su2026medgrpo}. MedVidBench's fixed pre-extracted frames may omit cues needed for these judgments, constraining the benefits of learned guidance.
+
+
+\subsection{Experience Transfer and Behavioral Adaptation}
+\label{sec:experience_analysis}
+
+\paragraph{Cross-model experience transfer.}
+Table~\ref{tab:cross_model_transfer} fixes inference to Qwen3.5-4B and varies the execution backbone and Reflector independently. Experience from 27B trajectories reaches 40.3--42.9\% accuracy, exceeding the 39.4\% foundational baseline and demonstrating transfer across these backbones. However, 4B trajectories perform better with either Reflector, suggesting the value of experience matched to the target agent's behavior. A 27B Reflector improves both trajectory sources, with the best pairing reaching 46.3\% using 4B trajectories. These results suggest complementary roles for experience matched to the target agent and stronger reflection.
+
+\paragraph{Experience-guided evidence gathering.}
+Figure~\ref{fig:learned_region_case} illustrates how experience aligns evidence collection with the question's temporal scope on a MedVidBench sample. VideoSpy$^{\mathbf{0}}$ answers an action question from a single frame, describing only where the gauze rests. The loaded \textit{Skill} specifies identifying the object before inspecting its action over the requested interval, while a historical case in \textit{Memory} provides a concrete example. VideoSpy$^{\mathcal{E}}$ additionally inspects 2--32\,s and identifies the gauze's blood-clearing function, matching the reference. The key change is to verify the requested action before stopping, using the same backbone and tools.
+
+
+
+\begin{figure}[!t]
+\centering
+\resizebox{0.92\linewidth}{!}{%
+\begingroup
+\renewcommand{\TraceFont}{\fontsize{6.8}{8}\selectfont}
+\definecolor{casegreen}{HTML}{256449}
+\definecolor{casegray}{HTML}{F0F1F3}
+\definecolor{casepalegreen}{HTML}{EDF4EE}
+\definecolor{casehighlight}{HTML}{D6EBCB}
+\newcommand{\CaseHighlight}[1]{{\setlength{\fboxsep}{0.5pt}\colorbox{casehighlight}{\textcolor{casegreen}{\bfseries #1}}}}
+\tcbset{case compact/.style={boxrule=0.4pt,titlerule=0.2pt,boxsep=0.6pt,top=0.3pt,bottom=0.3pt,toptitle=0.4pt,bottomtitle=0.4pt,before skip=1.2pt,after skip=1.2pt,fonttitle=\sffamily\mdseries\fontsize{6.2}{7.2}\selectfont,before upper={\setlength{\parskip}{0pt}\raggedright}},
+  case heading/.style={fonttitle=\sffamily\bfseries\fontsize{7.2}{8.3}\selectfont},
+  case agent/.style={agent message,width=0.94\linewidth},
+  case tool/.style={other message,width=0.94\linewidth},
+  case base message/.style={colframe=black!45,colbacktitle=black!9,coltitle=black!85},
+  case evolved message/.style={colframe=casegreen!65,colbacktitle=casegreen!10,coltitle=black!85},
+  case failure/.style={borderline west={0.8pt}{0pt}{changeaccent}},
+  case change/.style={borderline west={0.8pt}{0pt}{casegreen}}}
+\begin{minipage}{\linewidth}
+\sffamily\TraceFont
+\noindent\makebox[\linewidth][c]{\begin{minipage}{\linewidth}
+\begin{VideoStrip}
+\hbox{\begingroup\setlength{\unitlength}{\dimexpr(\linewidth-6pt)/4/1920\relax}%
+\begin{picture}(1920,1080)\put(0,0){\includegraphics[width=1920\unitlength]{../figures/medvidbench-2767-002.00s.jpg}}%
+\linethickness{0.6pt}\color{green}\put(748,1){\framebox(326,631){}}\end{picture}\endgroup\hskip2pt
+\VideoStripFrame{../figures/medvidbench-2767-014.00s.jpg}\hskip2pt
+\VideoStripFrame{../figures/medvidbench-2767-016.00s.jpg}\hskip2pt
+\VideoStripFrame{../figures/medvidbench-2767-030.00s.jpg}}
+\end{VideoStrip}
+\noindent\hbox{\VideoStripLabel{2 s: queried region}\hspace{2pt}%
+\VideoStripLabel{14 s}\hspace{2pt}%
+\VideoStripLabel{16 s}\hspace{2pt}%
+\VideoStripLabel{30 s}}
+\end{minipage}}\par
+\begin{MessageBox}[case compact,case heading,colbacktitle=black!7,top=0pt,bottom=0pt,before skip=1pt,after skip=2pt]{black!2}{Question {\mdseries (Task type: Region captioning)}}
+From 2.0 seconds to 32.0 seconds, what is the object doing in the region given by the bounding box at 2.0 seconds?
+\end{MessageBox}
+\begin{ExecutionBox}[case compact,case heading,colback=casegray]{black!45}{black!12}{VideoSpy$^{\mathbf{0}}$}
+\raggedright
+\begin{MessageBox}[case agent,case compact,case base message]{black!2}{\textbf{Agent: tool call}\hfill Round 1}
+{\ttfamily\fontsize{6.4}{7.6}\selectfont
+\{"name": "\textbf{frame\_inspect}", "arguments": \{"query": "What object is in the bounding box at 2.0 seconds and what is it doing?", "timestamps": [2.0]\}\}\par}
+\end{MessageBox}
+\begin{MessageBox}[case tool,case compact,case base message]{black!2}{\textbf{Tool: observation} (frame\_inspect)\hfill Round 1}
+[\ldots] The exact action (e.g., pressing, holding, moving) is \textbf{static in this single frame}. [\ldots]
+\end{MessageBox}
+\begin{MessageBox}[case agent,case compact,case base message,case failure]{black!2}{\textbf{Agent: final answer} (\textcolor{changeaccent}{misses the interval action})\hfill Round 2}
+The object in the bounding box at 2.0 seconds is a blood-stained surgical sponge or gauze \textcolor{changeaccent}{\textbf{resting on the blue surgical drape}}.
+\end{MessageBox}
+\end{ExecutionBox}
+\begin{ExecutionBox}[case compact,case heading,colback=casepalegreen,coltitle=casegreen]{casegreen!65}{casegreen!17}{VideoSpy$^{\mathcal{E}}$}
+\raggedright
+\begin{MessageBox}[case compact,case evolved message,segmentation style={draw=casegreen!65,line width=0.35pt,dash pattern=on 2pt off 2pt},middle=1.5pt,lower separated=true,fontlower=\sffamily\TraceFont,before lower={\setlength{\parskip}{0pt}\raggedright}]{casegreen!2}{\textbf{System prompt}\hfill Loaded experience (excerpts)}
+\textbf{Loaded Skill.} \textbf{Anchor-then-Track:} Inspect the bounding-box timestamp to \CaseHighlight{identify the object}, then use \texttt{clip\_skim} \CaseHighlight{over the full interval} to observe its action.
+\tcblower
+\textbf{Loaded Memory.} Historical case: identify a retractor at 148 s, then track its action over 148--200 s.\par
+\CaseHighlight{\texttt{frame\_inspect(148 s)} $\rightarrow$ \texttt{clip\_skim(148--200 s)}} $\rightarrow$ actively retracting tissue to maintain exposure.
+\end{MessageBox}
+\begin{MessageBox}[case agent,case compact,case evolved message,case change]{casegreen!2}{\textbf{Agent: tool call} (checks the full interval)\hfill Round 2}
+{\ttfamily\fontsize{6.4}{7.6}\selectfont
+\{"name": "\textbf{clip\_skim}", "arguments": \{"query": "Track the object in the bounding box region from 2.0 seconds to 32.0 seconds and describe what it is doing.", \CaseHighlight{"start\_time": 2.0, "end\_time": 32.0}\}\}\par}
+\end{MessageBox}
+\begin{MessageBox}[case tool,case compact,case evolved message]{casegreen!2}{\textbf{Tool: observation} (clip\_skim)\hfill Round 2}
+[\ldots] At 30.0s, the gauze is briefly seen again as the surgeon \CaseHighlight{wipes the area}. [\ldots]
+\end{MessageBox}
+\begin{MessageBox}[case agent,case compact,case evolved message,case change]{casegreen!2}{\textbf{Agent: final answer} (captures the interval action)\hfill Round 3}
+The object is a blood-stained surgical gauze pad that is \CaseHighlight{intermittently used to absorb and clear blood} from the surgical field between 2.0 and 32.0 seconds.
+\end{MessageBox}
+\end{ExecutionBox}
+\end{minipage}
+\endgroup
+}
+\caption{\textbf{Experience-guided evidence gathering.} Skill and Memory guide VideoSpy$^{\mathcal{E}}$ to inspect the full 2--32\,s interval and identify the gauze's blood-clearing action, which VideoSpy$^{\mathbf{0}}$ misses from a single frame. Full case: Appendix~\ref{app:medvid_gauze}.}
+\label{fig:learned_region_case}
+\vspace{-4pt}
+\end{figure}
+% Paired source: MedVidBench sample 2767, evaluations/{base,skill_memory}/debug/.
+% Skill/memory summaries, tool exchanges, and answer excerpts checked against the system prompt and trajectory.
+
+
+
+\section{Conclusion}
+
+We presented VideoSpy, a framework that enables a common foundational video agent to specialize in different domains through execution experience. The Reflector combines task-grouped reflection and evidence-based review to extract reusable \textit{Skill} and \textit{Memory}, which the Agent Optimizer integrates into subsequent execution. Under a unified held-out evaluation protocol, the evolved Qwen3.5-4B agent improves task performance and reduces inference token usage on LVBench, EgoLifeQA, and MedVidBench. Ablations show that ungrouped reflection can hurt performance, highlighting the value of task-grouped reflection and evidence-based review. Cross-model results further suggest that experience matched to the target agent complements stronger reflection. These findings support experience-driven domain adaptation within a shared video agent.
+% Future work will investigate transfer across broader model families and the stability of evolution over repeated rounds of execution and reflection.
+
+\clearpage
+\subsection*{AI use statement}
+
+In this work, we used generative AI tools to assist with code implementation, grammar correction, formatting, and improving the clarity of writing.
+We have not used generative AI tools for generating research ideas, designing experiments, or creating experimental results.
+We have reviewed all AI-assisted work. Specifically, we checked AI-assisted text for accuracy and consistency with the intended meaning.
+We take responsibility for the final content of this work, including text, claims, or artifacts produced with the aid of generative AI.
+
+\subsection*{Ethics statement}
+
+Our experiments use only publicly available datasets: LVBench, EgoLifeQA, and MedVidBench.
+We follow the applicable licenses, terms of use, and access requirements of each dataset, including restrictions concerning privacy and redistribution.
+These datasets are used solely for the research purposes described in this paper.
+
+\subsection*{Reproducibility statement}
+
+To support reproducibility, Sections~\ref{sec:evaluation_protocol} and~\ref{sec:experimental_setup} describe our evolution and evaluation protocols and experimental settings. Appendices~\ref{app:foundational}--\ref{app:optimizer} provide detailed method descriptions, core excerpts of the original prompts, complete visual-tool schemas, and Skill and Memory loading procedures. We provide the project source code in the supplementary materials. All datasets are publicly available, and our agent backbones use open weights. Reused captions and external embedding services are described in Section~\ref{sec:experimental_setup}.
+
+\bibliography{myref.bib}
+\bibliographystyle{iclr2027_conference}
+
+\clearpage
+\input{appendix}
+
+\end{document}

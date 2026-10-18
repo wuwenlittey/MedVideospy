@@ -1,0 +1,7 @@
+# New gap-midpoint frame IDs; retain the legacy short-side-256 preprocessing.
+tools:
+  clip_skim:
+    refinement:
+      temporal_fill: true
+      temporal_frames: 4
+      max_clips_per_question: 1

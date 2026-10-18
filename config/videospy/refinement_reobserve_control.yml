@@ -1,0 +1,10 @@
+# Re-observe the detail branch's SAME frame IDs at the original coarse size.
+# Only meaningful when source images have a short side >= 256 pixels.
+tools:
+  clip_skim:
+    refinement:
+      high_resolution: true
+      temporal_fill: false
+      high_resolution_frames: 4
+      high_resolution_short_side: 256
+      max_clips_per_question: 1

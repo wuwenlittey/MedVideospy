@@ -1,0 +1,8 @@
+# Same sampled frame IDs; original resolution, with no artificial upscaling.
+tools:
+  clip_skim:
+    refinement:
+      high_resolution: true
+      high_resolution_frames: 4
+      high_resolution_short_side: null
+      max_clips_per_question: 1

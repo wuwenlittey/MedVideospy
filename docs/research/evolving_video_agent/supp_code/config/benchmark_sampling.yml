@@ -1,0 +1,13 @@
+# Select samples from the manifest, then take every Nth sample.
+lvbench:
+  full: 1
+  lite: 3
+  debug: 100
+egolife:
+  full: 1
+  lite: 2
+  debug: 20
+medvidbench:
+  full: 1
+  lite: 3
+  debug: 100

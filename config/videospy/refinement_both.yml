@@ -1,0 +1,9 @@
+tools:
+  clip_skim:
+    refinement:
+      high_resolution: true
+      temporal_fill: true
+      high_resolution_frames: 4
+      temporal_frames: 4
+      high_resolution_short_side: null
+      max_clips_per_question: 1

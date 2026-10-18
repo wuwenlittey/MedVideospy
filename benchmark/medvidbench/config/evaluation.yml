@@ -1,0 +1,14 @@
+evaluation:
+  llm:
+    # model: "qwen3.6-flash"
+    # api_base: "https://llm-32hlsxjn1h3zqnqm.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    # api_key: YOUR_API_KEY
+    # 本地部署api的配置方法
+    # api_base: "https://member.aicloud.szu.edu.cn:11443/inf-app/a21068095973355520664329/v1"
+    api_base: "http://127.0.0.1:23333/v1"
+    model: "Qwen3.5-4B"
+    api_key: "dummy"
+    max_workers: 2
+    enable_thinking: false
+    max_completion_tokens: 2048
+    timeout: 120

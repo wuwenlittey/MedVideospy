@@ -1,0 +1,6 @@
+# Formal Offline evolution. The Reflector uses the Agent model endpoint with
+# deterministic non-thinking decoding; Agent inference settings stay unchanged.
+evolving:
+  reflector:
+    sampling:
+      seed: 42

@@ -1,0 +1,1 @@
+"""MedVidBench adapter."""

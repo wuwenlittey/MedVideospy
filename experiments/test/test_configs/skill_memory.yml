@@ -1,0 +1,5 @@
+evolving:
+  inference:
+    skill: true
+    memory: true
+    hyperparameter: false

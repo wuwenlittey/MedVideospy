@@ -1,0 +1,38 @@
+{
+  "backend": "live",
+  "max_task_rounds": 6,
+  "meta_every": 3,
+  "max_meta_rounds": 2,
+  "task_candidates": 2,
+  "meta_candidates": 1,
+  "episode_rounds": 2,
+  "repair_attempts": 1,
+  "investigations": 1,
+  "seed": 42,
+  "limits": {
+    "total_tokens": 10000000,
+    "episode_tokens": 500000,
+    "max_calls": 10000,
+    "worker_timeout": 900,
+    "max_frames": 128,
+    "max_steps": 16,
+    "max_pixels": 16777216,
+    "max_input_characters": 120000,
+    "max_source_characters": 160000
+  },
+  "selection": {
+    "min_quality_gain": 0.001,
+    "max_cost_growth": 0.2,
+    "min_cost_reduction": 0.05,
+    "quality_tolerance": 0.0
+  },
+  "models": {
+    "task": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 1024},
+    "overview": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 4096},
+    "clip_skim": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 2048},
+    "frame_inspect": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 2048},
+    "assessor": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 2048},
+    "meta": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 8192},
+    "outer": {"model_name": "env:RSI_MODEL", "api_base": "env:RSI_API_BASE", "api_key": "env:RSI_API_KEY", "temperature": 0.0, "max_retries": 2, "max_completion_tokens": 8192}
+  }
+}

@@ -1,0 +1,18 @@
+model_name: "openai/qwen3.6-flash"
+api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key: "YOUR_API_KEY"
+api_version: "OPENAI_API_VERSION"
+
+reasoning_effort: "medium"
+seed: 42
+temperature: 0.0
+max_steps: 16
+max_retries: 3
+max_tokens: 32768
+
+frame_sampling_factor: 4
+overview_base: 16
+skim_base: 4
+focus_base: 4
+
+tools: ["overview", "skim", "focus"]

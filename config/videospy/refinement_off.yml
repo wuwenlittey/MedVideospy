@@ -1,0 +1,6 @@
+# Apply this override LAST to restore the original observation behavior.
+tools:
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false

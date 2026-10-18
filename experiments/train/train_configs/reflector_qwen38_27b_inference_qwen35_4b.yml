@@ -1,0 +1,25 @@
+# 推理器（Agent 和视觉工具）：Qwen3.5-4B。反思器：Qwen3.8-27B。
+# 其余参数继承 config/videospy/default.yml。
+_default_model: &default_model
+  model_name: "openai/Qwen3.5-4B"
+  # api_base: "https://member.aicloud.szu.edu.cn:11443/inf-app/a21068095973355520664329/v1"
+  api_base: "http://127.0.0.1:23333/v1"
+
+agent:
+  model: *default_model
+
+tools:
+  overview:
+    model: *default_model
+  clip_skim:
+    model: *default_model
+  frame_inspect:
+    model: *default_model
+
+evolving:
+  reflector:
+    model:
+      model_name: "openai/Qwen3.8-27B"
+      # api_base: "https://member.aicloud.szu.edu.cn:11443/inf-app/a21161560921862144655310/v1"
+      # api_base: "http://qwen38x27b:23333/v1"
+      api_base: "http://127.0.0.1:23333/v1"

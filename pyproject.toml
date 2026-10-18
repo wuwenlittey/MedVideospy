@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videoseek"
+version = "0.1.0"
+description = "VideoSeek and VideoSpy CLI and agent package"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "decord",
+  "litellm",
+  "openai",
+  "numpy",
+  "pillow",
+  "tqdm",
+  "pyyaml",
+  "yt-dlp",
+  "openai-whisper",
+]
+
+[project.scripts]
+"videoseek-cli" = "videoseek.cli:main"
+"videospy-cli" = "videospy.cli:main"
+"videospy-rsi" = "videospy_rsi.cli:main"
+
+[tool.setuptools]
+packages = { find = { include = ["videoseek*", "videospy*", "config*"] } }
+
+[tool.setuptools.package-data]
+"config.videoseek" = ["*.yml"]
+"config.videospy" = ["*.yml"]
+"config.videospy_rsi" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

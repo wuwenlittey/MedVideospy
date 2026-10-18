@@ -1,0 +1,7 @@
+decord
+litellm
+openai
+numpy
+pillow
+pyyaml
+tqdm
