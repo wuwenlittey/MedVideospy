@@ -132,6 +132,12 @@ class VideoSpyAgent(BaseAgent):
             config["tools"].get("clip_skim", {}).get("refinement")
         )
         self.clip_refinement_audit = []
+        self.visual_memory_session = None
+        visual_memory = config["tools"].get("visual_memory", {})
+        if visual_memory.get("enabled"):
+            from .visual_memory.integration import VisualMemorySession
+
+            self.visual_memory_session = VisualMemorySession(visual_memory)
         self.messages = self.construct_initial_messages()
 
     def reset(self) -> None:
@@ -139,6 +145,8 @@ class VideoSpyAgent(BaseAgent):
         self._successful_tool_requests.clear()
         self._overview_called = False
         self.clip_refinement_audit.clear()
+        if self.visual_memory_session is not None:
+            self.visual_memory_session.reset()
 
     def _available_tools(self) -> list[dict]:
         return [
@@ -274,6 +282,7 @@ class VideoSpyAgent(BaseAgent):
         model_calls = []
         succeeded = False
         refinement_audit_start = len(self.clip_refinement_audit)
+        visual_memory_start = len(self.visual_memory_session.audit) if self.visual_memory_session else 0
 
         try:
             parameters = json.loads(function.get("arguments", "{}"))
@@ -326,6 +335,26 @@ class VideoSpyAgent(BaseAgent):
                 if function_name == "overview":
                     self._overview_called = True
                 execution_config = self.config["tools"][function_name]
+                if self.visual_memory_session is not None and function_name in {"clip_skim", "frame_inspect"}:
+                    from pathlib import PurePosixPath
+
+                    source = self.memory_context or {}
+                    explicit = self.visual_memory_session.settings["context"]
+                    # Runtime context is assigned by benchmarks AFTER construction.
+                    # MedVidBench source_id identifies a clip, so also exclude the
+                    # original video, including its other clips and questions.
+                    video = source.get("source_video_id") or source.get("video") or explicit.get("source_video_id")
+                    if not video:
+                        video = PurePosixPath(str(self.video_path).replace("\\", "/")).stem
+                    execution_parameters["_visual_memory_session"] = self.visual_memory_session
+                    execution_parameters["_visual_memory_context"] = {
+                        **explicit,
+                        "source_video_id": str(video),
+                        "source_id": source.get("source_id") or explicit.get("source_id"),
+                        "source_sample_id": source.get("sample_id") or source.get("source_sample_id") or explicit.get("source_sample_id"),
+                        "patient_id": source.get("patient_id") or explicit.get("patient_id"),
+                        "task_type": explicit.get("task_type") or self.task_type,
+                    }
                 should_refine = (
                     function_name == "clip_skim"
                     and refinement_enabled(self.clip_refinement_settings)
@@ -374,6 +403,8 @@ class VideoSpyAgent(BaseAgent):
             tool_message["clip_refinement"] = copy.deepcopy(
                 self.clip_refinement_audit[refinement_audit_start:]
             )
+        if self.visual_memory_session and len(self.visual_memory_session.audit) > visual_memory_start:
+            tool_message["visual_memory"] = copy.deepcopy(self.visual_memory_session.audit[visual_memory_start:])
         return tool_message, succeeded
 
     def _print_assistant_message(self, label: str, message: dict) -> None:
@@ -393,7 +424,7 @@ class VideoSpyAgent(BaseAgent):
     def _messages_for_model(self) -> list[dict]:
         return [
             {key: value for key, value in message.items()
-             if key not in {"model_call", "model_calls", "clip_refinement"}}
+             if key not in {"model_call", "model_calls", "clip_refinement", "visual_memory"}}
             for message in self.messages
         ]
 
@@ -414,7 +445,11 @@ class VideoSpyAgent(BaseAgent):
                          **({'clip_refinement': {
                              'settings': self.clip_refinement_settings,
                              'inspections': self.clip_refinement_audit,
-                         }} if refinement_enabled(self.clip_refinement_settings) else {})},
+                         }} if refinement_enabled(self.clip_refinement_settings) else {}),
+                         **({'visual_memory': {
+                             'settings': self.visual_memory_session.summary(),
+                             'inspections': self.visual_memory_session.audit,
+                         }} if self.visual_memory_session is not None else {})},
         )
 
     def _answer(self, total_steps: int, finish_reason: str) -> Trajectory:

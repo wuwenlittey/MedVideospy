@@ -1,0 +1,15 @@
+# Existing remote WeMM service; no local model loading or downloads.
+# Use the SAME file for index building and online lookup.
+tools:
+  visual_memory:
+    embedding:
+      protocol: vllm_chat
+      api_base_env: WEMM_EMBEDDING_API_BASE
+      model: WeMM-Embedding-2B
+      dimension: 2048
+      timeout: 60
+      max_retries: 1
+      max_images_per_case: 16
+      # Uncomment if your server requires authentication:
+      # api_key_env: WEMM_EMBEDDING_API_KEY
+      # model must match the server's --served-model-name (or its model path).

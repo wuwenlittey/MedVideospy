@@ -1,0 +1,10 @@
+# Append last for the original observation flow.
+tools:
+  visual_memory:
+    enabled: false
+  memory_search:
+    enabled: false
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false

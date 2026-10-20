@@ -161,6 +161,12 @@ def execute_frame_inspect(config: dict, parameters: dict) -> str:
         }
     )
 
+    if parameters.get("_visual_memory_session") is not None:
+        content = parameters["_visual_memory_session"].augment(
+            content, frames=frames, timestamps=actual_timestamps,
+            parameters={**parameters, "_visual_memory_model_name": config["model"].get("model_name")},
+            tool_name="frame_inspect",
+        )
     response = ModelClient(config["model"]).chat(
         messages=[{"role": "user", "content": content}]
     )

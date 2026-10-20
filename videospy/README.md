@@ -90,3 +90,11 @@ and dimensions must match those used to create the database. Skill-only
 inference can use `--evolved-skill --no-evolved-memory --no-evolved-hyperparameter`.
 Task-specific Skill loading additionally requires a matching task type in
 `_runtime.task_type` in an override YAML; the standalone CLI defaults to `general`.
+
+## Medical visual case memory
+
+Optional, independently switchable visual-case retrieval is described in
+[the setup and ablation guide](../docs/devs/visual_case_memory.md). It connects to
+an existing WeMM embedding service and supports text or image/text references
+inside the existing local observation call. Trajectory exports remain pending
+review until their image/label correspondence has been verified.

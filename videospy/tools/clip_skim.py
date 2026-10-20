@@ -154,6 +154,7 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         start_time=start_time,
         end_time=end_time,
     )
+    memory_frames = frames
     frames = _resize_frames(frames)
     coverage = sampling_summary(timestamps)
     content = [
@@ -188,6 +189,12 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         }
     )
 
+    if parameters.get("_visual_memory_session") is not None:
+        content = parameters["_visual_memory_session"].augment(
+            content, frames=memory_frames, timestamps=timestamps,
+            parameters={**parameters, "_visual_memory_model_name": config["model"].get("model_name")},
+            tool_name="clip_skim",
+        )
     response = ModelClient(config["model"]).chat(
         messages=[{"role": "user", "content": content}]
     )

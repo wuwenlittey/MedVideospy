@@ -1,0 +1,20 @@
+# Compose with visual_memory_wemm.yml and your VLM configuration.
+tools:
+  visual_memory:
+    enabled: true
+    mode: image_text
+    database_path: output/visual_memory/index_v1
+    top_k: 1
+    min_similarity: 0.0
+    query_frames: 16
+    reference_frames: 16
+    reference_short_side: 256
+    max_calls_per_question: 4
+    apply_to: [clip_skim, frame_inspect]
+    fail_open: true
+  memory_search:
+    enabled: false
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false
