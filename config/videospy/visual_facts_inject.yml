@@ -1,0 +1,24 @@
+# Compose with your normal VLM config and visual_memory_wemm.yml.
+# Tests the new fact bank with the existing one-call injection mechanism.
+tools:
+  visual_memory:
+    enabled: true
+    usage_mode: inject
+    mode: image_text
+    match_mode: fact
+    allow_model_reviewed: true
+    database_path: output/visual_memory/facts_index_v2
+    top_k: 2
+    min_similarity: 0.0
+    reference_frames: 16
+    query_frames: 16
+    reference_short_side: 256
+    max_calls_per_question: 4
+    fail_open: true
+    task_fact_types: {}
+  memory_search:
+    enabled: false
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false

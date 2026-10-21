@@ -23,6 +23,7 @@ import numpy as np
 from PIL import Image
 
 from .embedding import EmbeddingClient, EmbeddingError, validate_vectors
+from .facts import fact_exclusion, requested_fact_types, validate_fact_record
 
 
 SCHEMA_VERSION = 1
@@ -50,15 +51,19 @@ def _text(record, key, *, required=False):
     return value.strip()
 
 
-def _validate_case(record, max_images):
+def _validate_case(record, max_images, *, allow_model_reviewed=False):
     if not isinstance(record, dict):
         raise ValueError("each case must be a JSON object")
-    result = dict(record)
+    is_fact = record.get("record_kind") == "visual_fact"
+    result = validate_fact_record(record) if is_fact else dict(record)
     for key in ("case_id", "question", "answer_text", "source_video_id", "task_type", "verification_note"):
         result[key] = _text(record, key, required=True)
     if re.fullmatch(r"\(?[A-Da-d]\)?[.)]?", result["answer_text"]):
         raise ValueError("answer_text must contain answer semantics, not only an option letter")
-    if record.get("verified") is not True:
+    machine_fact = is_fact and result["verification"]["status"] == "model_reviewed"
+    if machine_fact and not allow_model_reviewed:
+        raise ValueError("model_reviewed visual facts require explicit allow_model_reviewed")
+    if not machine_fact and record.get("verified") is not True:
         raise ValueError(f"case {result['case_id']} is not explicitly verified")
     if record.get("split") not in {"train", "dev"}:
         raise ValueError("visual memory only accepts train/dev cases")
@@ -91,11 +96,13 @@ def _validate_case(record, max_images):
     return result
 
 
-def validate_case(record, max_images=16):
+def validate_case(record, max_images=16, *, allow_model_reviewed=False):
     """Validate a reviewed case without opening images or contacting a model."""
     if isinstance(max_images, bool) or not isinstance(max_images, int) or not 1 <= max_images <= 64:
         raise ValueError("max_images must be an integer between 1 and 64")
-    return _validate_case(record, max_images)
+    if not isinstance(allow_model_reviewed, bool):
+        raise ValueError("allow_model_reviewed must be a boolean")
+    return _validate_case(record, max_images, allow_model_reviewed=allow_model_reviewed)
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -118,13 +125,15 @@ def _inside(root: Path, relative: str) -> Path:
     return candidate
 
 
-def build_index(manifest_path, output_dir, embedding_config, *, embedder=None):
+def build_index(manifest_path, output_dir, embedding_config, *, embedder=None, allow_model_reviewed=False):
     """Create a new immutable index; refuse existing outputs and clean staging.
 
     ``max_images_per_case`` in embedding_config defaults to 16 (range 1..64).
     Source paths are relative to the input JSONL. Images are copied byte-for-byte
     into ``media``; model input is RGB. The returned dictionary is manifest.json.
     """
+    if not isinstance(allow_model_reviewed, bool):
+        raise ValueError("allow_model_reviewed must be a boolean")
     source, output = Path(manifest_path).resolve(), Path(output_dir).absolute()
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"index output already exists: {output}")
@@ -138,7 +147,7 @@ def build_index(manifest_path, output_dir, embedding_config, *, embedder=None):
         if not line.strip():
             continue
         try:
-            case = _validate_case(json.loads(line), max_images)
+            case = _validate_case(json.loads(line), max_images, allow_model_reviewed=allow_model_reviewed)
         except (ValueError, TypeError) as exc:
             raise ValueError(f"invalid visual memory case on line {line_number}: {exc}") from exc
         if case["case_id"] in seen:
@@ -202,6 +211,7 @@ def build_index(manifest_path, output_dir, embedding_config, *, embedder=None):
             "count": len(records), "dimension": dimension,
             "aggregation": AGGREGATION, "embedder": identity,
             "build_settings": {"max_images_per_case": max_images},
+            "admission_policy": {"allow_model_reviewed": allow_model_reviewed},
             "source_manifest_sha256": _sha(source_bytes), "files": hashes,
         }
         (staging / "manifest.json").write_bytes(_json(manifest) + b"\n")
@@ -245,8 +255,12 @@ class VisualMemoryStore:
         max_images = manifest.get("build_settings", {}).get("max_images_per_case", 16)
         if isinstance(max_images, bool) or not isinstance(max_images, int) or not 1 <= max_images <= 64:
             raise ValueError("index manifest has an invalid maximum image count")
+        policy = manifest.get("admission_policy", {"allow_model_reviewed": False})
+        if not isinstance(policy, dict) or not isinstance(policy.get("allow_model_reviewed"), bool):
+            raise ValueError("index manifest has an invalid admission policy")
+        self.allow_model_reviewed = policy["allow_model_reviewed"]
         for line in _inside(self.path, "records.jsonl").read_text(encoding="utf-8").splitlines():
-            case = _validate_case(json.loads(line), max_images)
+            case = _validate_case(json.loads(line), max_images, allow_model_reviewed=self.allow_model_reviewed)
             if case["case_id"] in ids:
                 raise ValueError("duplicate case_id in index")
             ids.add(case["case_id"])
@@ -269,15 +283,23 @@ class VisualMemoryStore:
         self.dimension = self.vectors.shape[1]
         self.identity = manifest["embedder"]
 
-    def search(self, query_vector, *, context, top_k=2, min_similarity=0.0):
+    def search(self, query_vector, *, context, top_k=2, min_similarity=0.0,
+               match_mode="task", fact_types=None, allow_model_reviewed=False):
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
             raise ValueError("top_k must be a positive integer")
         if isinstance(min_similarity, bool) or not isinstance(min_similarity, (float, int)) or not math.isfinite(min_similarity) or not -1 <= min_similarity <= 1:
             raise ValueError("min_similarity must be between -1 and 1")
         if not isinstance(context, dict):
             raise ValueError("search context must be a dictionary")
+        if match_mode not in {"task", "fact"}:
+            raise ValueError("match_mode must be task or fact")
+        if not isinstance(allow_model_reviewed, bool):
+            raise ValueError("allow_model_reviewed must be a boolean")
+        if match_mode == "task" and fact_types is not None:
+            raise ValueError("fact_types requires explicit match_mode=fact")
         current = {key: _text(context, key, required=key in {"source_video_id", "task_type"})
                    for key in (*_IDS, "task_type", "procedure")}
+        allowed_types = requested_fact_types(current["task_type"], fact_types) if match_mode == "fact" else None
         raw = np.asarray(query_vector)
         if raw.ndim == 1:
             raw = raw[None, :]
@@ -287,12 +309,19 @@ class VisualMemoryStore:
         eligible, exclusions = [], []
         for case, score in zip(self.records, scores):
             reasons = []
-            if case.get("verified") is not True or case.get("split") not in {"train", "dev"}:
+            machine_fact = (case.get("record_kind") == "visual_fact"
+                            and case.get("verification", {}).get("status") == "model_reviewed")
+            if machine_fact and not allow_model_reviewed:
+                reasons.append("model_reviewed_not_enabled")
+            if ((case.get("verified") is not True and not (machine_fact and allow_model_reviewed))
+                    or case.get("split") not in {"train", "dev"}):
                 reasons.append("unverified_or_nontraining_case")
             for field in _IDS:
                 if current[field] is not None and case.get(field) is not None and current[field] == str(case[field]):
                     reasons.append("same_" + field)
-            if case["task_type"] != current["task_type"]:
+            if match_mode == "fact":
+                reasons.extend(fact_exclusion(case, current, allowed_types))
+            elif case["task_type"] != current["task_type"]:
                 reasons.append("task_type_mismatch")
             if case.get("procedure") and current["procedure"] and case["procedure"] != current["procedure"]:
                 reasons.append("procedure_mismatch")

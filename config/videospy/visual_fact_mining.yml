@@ -1,0 +1,27 @@
+# Offline VLM extraction/review. This is NOT the WeMM embedding configuration.
+# Model name follows the existing ModelClient/LiteLLM convention, e.g.
+# FACT_MINER_MODEL=openai/<your-served-vision-model-name>
+visual_fact_mining:
+  vlm:
+    model_name_env: FACT_MINER_MODEL
+    api_base_env: FACT_MINER_API_BASE
+    api_key_env: FACT_MINER_API_KEY
+    temperature: 0.0
+    max_completion_tokens: 4096
+    max_retries: 2
+    request_timeout: 180
+  # Empty means a fresh review call using the same model configuration.
+  # To use a different reviewer, supply the corresponding environment variables:
+  # reviewer_vlm:
+  #   model_name_env: FACT_REVIEWER_MODEL
+  #   api_base_env: FACT_REVIEWER_API_BASE
+  #   api_key_env: FACT_REVIEWER_API_KEY
+  reviewer_vlm: {}
+  max_facts_per_observation: 6
+  max_images_per_observation: 16
+  max_facts_per_video_type: 20
+  max_total_facts: 1000
+  # A small first run; --resume processes the next 5 unfinished observations.
+  # Set null to process all observations. This budget may change on resume.
+  max_observations: 5
+  resume: false

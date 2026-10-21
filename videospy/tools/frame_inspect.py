@@ -161,8 +161,10 @@ def execute_frame_inspect(config: dict, parameters: dict) -> str:
         }
     )
 
-    if parameters.get("_visual_memory_session") is not None:
-        content = parameters["_visual_memory_session"].augment(
+    current_content = content
+    memory_session = parameters.get("_visual_memory_session")
+    if memory_session is not None:
+        content = memory_session.augment(
             content, frames=frames, timestamps=actual_timestamps,
             parameters={**parameters, "_visual_memory_model_name": config["model"].get("model_name")},
             tool_name="frame_inspect",
@@ -170,9 +172,16 @@ def execute_frame_inspect(config: dict, parameters: dict) -> str:
     response = ModelClient(config["model"]).chat(
         messages=[{"role": "user", "content": content}]
     )
+    observation = response["content"]
+    if memory_session is not None:
+        observation = memory_session.review(
+            current_content, original_observation=observation,
+            frames=frames, timestamps=actual_timestamps, parameters=parameters,
+            tool_name="frame_inspect", tool_model=config["model"],
+        )
     actual_text = ", ".join(f"{timestamp:.3f}s" for timestamp in actual_timestamps)
     requested_text = ", ".join(f"{timestamp:.3f}s" for timestamp in timestamps)
     return (
         f"{limit_notice}Frame inspection at {actual_text} "
-        f"(requested {requested_text}):\n{coverage}{response['content']}"
+        f"(requested {requested_text}):\n{coverage}{observation}"
     )

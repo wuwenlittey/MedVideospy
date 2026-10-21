@@ -189,8 +189,10 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         }
     )
 
-    if parameters.get("_visual_memory_session") is not None:
-        content = parameters["_visual_memory_session"].augment(
+    current_content = content
+    memory_session = parameters.get("_visual_memory_session")
+    if memory_session is not None:
+        content = memory_session.augment(
             content, frames=memory_frames, timestamps=timestamps,
             parameters={**parameters, "_visual_memory_model_name": config["model"].get("model_name")},
             tool_name="clip_skim",
@@ -198,6 +200,13 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
     response = ModelClient(config["model"]).chat(
         messages=[{"role": "user", "content": content}]
     )
+    observation = response["content"]
+    if memory_session is not None:
+        observation = memory_session.review(
+            current_content, original_observation=observation,
+            frames=memory_frames, timestamps=timestamps, parameters=parameters,
+            tool_name="clip_skim", tool_model=config["model"],
+        )
     if end_time < requested_end_time:
         interval_status = (
             f"Interval adjusted to video bounds: requested {start_time:.1f}s - "
@@ -210,5 +219,5 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         "Inspection mode: clip_skim\n"
         f"{interval_status}Evidence status: coarse clip inspection.\n"
         f"{coverage}"
-        f"{response['content']}"
+        f"{observation}"
     )

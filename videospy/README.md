@@ -98,3 +98,9 @@ Optional, independently switchable visual-case retrieval is described in
 an existing WeMM embedding service and supports text or image/text references
 inside the existing local observation call. Trajectory exports remain pending
 review until their image/label correspondence has been verified.
+
+Batch VLM fact mining and optional post-observation comparison are described in
+[the visual fact guide](../docs/devs/visual_fact_memory.md). They inventory whole
+trajectory collections, retain machine-review provenance, support explicit
+cross-task fact compatibility, and provide a current-only review control. The
+original case-injection path remains available for isolated comparisons.

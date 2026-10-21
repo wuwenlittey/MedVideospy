@@ -1,0 +1,17 @@
+# Equal-call-count control: independent first observation, then current-only review.
+# Does not require an embedding service or a case index.
+tools:
+  visual_memory:
+    enabled: true
+    usage_mode: current_only_review
+    mode: image_text
+    review:
+      model: {}
+      max_calls_per_question: 4
+    fail_open: true
+  memory_search:
+    enabled: false
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false

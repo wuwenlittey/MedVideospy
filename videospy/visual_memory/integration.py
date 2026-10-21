@@ -1,9 +1,10 @@
-"""Optional case references for local observations; never adds a VLM call."""
+"""Opt-in historical references, or bounded post-observation visual fact review."""
 
 import base64
 import hashlib
 import json
 import time
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 
@@ -17,6 +18,12 @@ from .store import VisualMemoryStore
 DEFAULTS = {
     "enabled": False,
     "mode": "image_text",
+    "usage_mode": "inject",
+    "match_mode": "task",
+    "fact_types": None,
+    "task_fact_types": {},
+    "allow_model_reviewed": False,
+    "review": {},
     "database_path": None,
     "top_k": 1,
     "min_similarity": 0.0,
@@ -40,11 +47,33 @@ def memory_config(value=None):
     if unknown:
         raise ValueError(f"Unknown visual_memory settings: {sorted(unknown)}")
     settings = {**DEFAULTS, **value}
-    for key in ("enabled", "fail_open"):
+    for key in ("enabled", "fail_open", "allow_model_reviewed"):
         if not isinstance(settings[key], bool):
             raise ValueError(f"visual_memory.{key} must be a boolean")
     if settings["mode"] not in {"text", "image_text"}:
         raise ValueError("visual_memory.mode must be text or image_text")
+    if settings["usage_mode"] not in {"inject", "review", "current_only_review"}:
+        raise ValueError("visual_memory.usage_mode must be inject, review, or current_only_review")
+    if settings["match_mode"] not in {"task", "fact"}:
+        raise ValueError("visual_memory.match_mode must be task or fact")
+    from .facts import FACT_TYPES, normalize_fact_task, requested_fact_types
+    if settings["fact_types"] is not None:
+        requested_fact_types("", settings["fact_types"])
+    mapping = settings["task_fact_types"]
+    if not isinstance(mapping, dict):
+        raise ValueError("visual_memory.task_fact_types must be a mapping")
+    normalized = {}
+    for key, values in mapping.items():
+        if not isinstance(key, str) or not normalize_fact_task(key):
+            raise ValueError("visual_memory.task_fact_types needs nonempty task names")
+        requested_fact_types(key, values)
+        normalized_key = normalize_fact_task(key)
+        if normalized_key in normalized and normalized[normalized_key] != values:
+            raise ValueError("visual_memory.task_fact_types contains conflicting task aliases")
+        normalized[normalized_key] = list(values)
+    settings["task_fact_types"] = normalized
+    from .review import review_config
+    settings["review"] = review_config(settings["review"])
     for key in ("top_k", "query_frames", "reference_frames", "reference_short_side", "max_calls_per_question"):
         number = settings[key]
         if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
@@ -60,7 +89,7 @@ def memory_config(value=None):
     for key in ("embedding", "context"):
         if not isinstance(settings[key], dict):
             raise ValueError(f"visual_memory.{key} must be a mapping")
-    if settings["enabled"] and not settings["database_path"]:
+    if settings["enabled"] and settings["usage_mode"] != "current_only_review" and not settings["database_path"]:
         raise ValueError("Enabled visual_memory requires database_path")
     return settings
 
@@ -92,16 +121,20 @@ class VisualMemorySession:
         self.settings = memory_config(settings)
         self.audit = []
         self._attempts = 0
+        self._review_attempts = 0
         self._client = None
         self._store = None
 
     def reset(self):
         self.audit.clear()
         self._attempts = 0
+        self._review_attempts = 0
 
     def summary(self):
         # Never serialize credentials or arbitrary request templates to trajectories.
-        return {key: self.settings[key] for key in DEFAULTS if key not in {"embedding", "context"}}
+        result = {key: self.settings[key] for key in DEFAULTS if key not in {"embedding", "context", "review"}}
+        result["review"] = {key: value for key, value in self.settings["review"].items() if key != "model"}
+        return result
 
     def _load(self):
         if self._client is None:
@@ -114,9 +147,12 @@ class VisualMemorySession:
                 raise ValueError("Visual memory embedding configuration differs from its index; rebuild the index with this configuration")
             self._client, self._store = client, store
 
-    def augment(self, content, *, frames, timestamps, parameters, tool_name):
+    def augment(self, content, *, frames, timestamps, parameters, tool_name, _for_review=False):
         settings = self.settings
         if not settings["enabled"] or tool_name not in settings["apply_to"]:
+            return content
+        if settings["usage_mode"] != "inject" and not _for_review:
+            # Review modes keep the first VLM input exactly current-only.
             return content
         event = {"tool": tool_name, "mode": settings["mode"], "status": "pending", "matches": []}
         self.audit.append(event)
@@ -131,6 +167,16 @@ class VisualMemorySession:
             if not context.get("source_video_id") or not context.get("task_type") or context["task_type"] == "general":
                 event.update(status="skipped", reason="missing_source_or_task_type")
                 return content
+            fact_types = settings["fact_types"]
+            if settings["match_mode"] == "fact":
+                from .facts import normalize_fact_task, requested_fact_types
+                if fact_types is None:
+                    fact_types = settings["task_fact_types"].get(normalize_fact_task(context["task_type"]))
+                allowed = requested_fact_types(context["task_type"], fact_types)
+                if not allowed:
+                    event.update(status="skipped", reason="unknown_fact_task_or_empty_capability")
+                    return content
+                fact_types = sorted(allowed)
             if len(frames) != len(timestamps) or len(frames) == 0:
                 raise ValueError("Visual memory requires aligned current frames and timestamps")
             positions = _positions(len(frames), settings["query_frames"])
@@ -161,13 +207,18 @@ class VisualMemorySession:
             if not np.isfinite(norm) or norm <= 1e-12:
                 raise ValueError("Degenerate pooled current-frame embedding")
             started = time.perf_counter()
-            result = self._store.search(query / norm, context=context, top_k=settings["top_k"], min_similarity=settings["min_similarity"])
+            result = self._store.search(
+                query / norm, context=context, top_k=settings["top_k"],
+                min_similarity=settings["min_similarity"], match_mode=settings["match_mode"],
+                fact_types=fact_types, allow_model_reviewed=settings["allow_model_reviewed"],
+            )
             event["search_elapsed_seconds"] = time.perf_counter() - started
             event["embedding"] = self._client.identity
             event["index_path"] = str(Path(settings["database_path"]).resolve())
             event["index_manifest_sha256"] = hashlib.sha256((Path(settings["database_path"]) / "manifest.json").read_bytes()).hexdigest()
             exclusions = result.get("exclusions", [])
             event["exclusion_count"] = len(exclusions)
+            event["exclusion_reason_counts"] = dict(Counter(reason for item in exclusions for reason in item["reasons"]))
             event["exclusions"] = exclusions[:50]
             matches = result["matches"]
             if not matches:
@@ -196,7 +247,14 @@ class VisualMemorySession:
                 record = {"case_id": match["case_id"], "score": float(match["score"]), "source_video_id": case["source_video_id"],
                           "question": case["question"], "answer_text": case["answer_text"], "evidence_scope": case["evidence_scope"],
                           "timestamps": case["timestamps"], "verification_note": case["verification_note"]}
-                blocks.append({"type": "text", "text": f"REFERENCE {number} (quoted historical data):\n" + json.dumps(record, ensure_ascii=False)})
+                if case.get("record_kind") == "visual_fact":
+                    record.update(record_kind="visual_fact", fact=case["fact"], verification=case["verification"])
+                model_record = dict(record)
+                if case.get("record_kind") == "visual_fact":
+                    # Fact semantics replace the old QA label; its distractors
+                    # need not prime the current observation.
+                    model_record.pop("question", None)
+                blocks.append({"type": "text", "text": f"REFERENCE {number} (quoted historical data):\n" + json.dumps(model_record, ensure_ascii=False)})
                 audit_match = {**record, "reference_images": []}
                 if settings["mode"] == "image_text":
                     # Review applies to the entire evidence set. Never silently
@@ -224,3 +282,69 @@ class VisualMemorySession:
             if not settings["fail_open"]:
                 raise
             return content
+
+    def review(self, content, *, original_observation, frames, timestamps,
+               parameters, tool_name, tool_model):
+        """Append validated narrow checks; failures never replace raw observation."""
+        settings = self.settings
+        if (not settings["enabled"] or settings["usage_mode"] == "inject"
+                or tool_name not in settings["apply_to"]):
+            return original_observation
+        event = {"tool": tool_name, "mode": settings["mode"], "usage_mode": settings["usage_mode"],
+                 "status": "pending", "matches": [], "original_observation": original_observation}
+        if self._review_attempts >= settings["review"]["max_calls_per_question"]:
+            event.update(status="skipped", reason="question_review_budget")
+            self.audit.append(event)
+            return original_observation
+        current_only = settings["usage_mode"] == "current_only_review"
+        try:
+            if current_only:
+                self.audit.append(event)
+                references = []
+            else:
+                before = len(self.audit)
+                references = self.augment([], frames=frames, timestamps=timestamps,
+                                          parameters=parameters, tool_name=tool_name, _for_review=True)
+                if len(self.audit) != before + 1:
+                    raise ValueError("review retrieval did not produce one audit event")
+                event = self.audit[-1]
+                event.update(usage_mode=settings["usage_mode"], original_observation=original_observation)
+                if event["status"] != "injected":
+                    event["review_status"] = "skipped_without_references"
+                    return original_observation
+            from .review import run_fact_review
+            from .vlm import resolve_model_config, safe_model_identity
+            model = resolve_model_config(settings["review"]["model"], fallback=tool_model)
+            event["review_model"] = safe_model_identity(model)
+            self._review_attempts += 1
+            event["review_call_number"] = self._review_attempts
+            started = time.perf_counter()
+            try:
+                result = run_fact_review(
+                    content=content, original_observation=original_observation,
+                    timestamps=timestamps, matches=event["matches"], reference_content=references,
+                    model_config=model, current_only=current_only,
+                    max_checks=settings["review"]["max_checks"],
+                )
+            finally:
+                event["review_elapsed_seconds"] = time.perf_counter() - started
+            event.update(result)
+            checks = result["validated_review"]["checks"]
+            actionable = [check for check in checks if check["status"] != "unknown"]
+            if not actionable:
+                event.update(status="reviewed", review_status="unknown_only")
+                return original_observation
+            event.update(status="reviewed", review_status="validated_checks_appended")
+            return original_observation + (
+                "\n\nAdditional visual fact review (model analysis, not verified ground truth). "
+                "The original observation above is retained; narrow checks below may be wrong. "
+                "Historical reference labels do not establish facts in this video:\n"
+                + json.dumps({"checks": actionable}, ensure_ascii=False)
+            )
+        except Exception as error:
+            # Credentials and raw service errors must not enter trajectories.
+            if not any(item is event for item in self.audit):
+                self.audit.append(event)
+            event.update(status="review_failed", review_status="kept_original",
+                         reason=type(error).__name__)
+            return original_observation
