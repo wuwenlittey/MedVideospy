@@ -23,8 +23,12 @@ def validate_alignment(value):
     if not isinstance(value, dict):
         raise ValueError("missing explicit alignment annotation")
     result = copy.deepcopy(value)
-    if result.get("source") not in {"dataset_annotation", "human_verified"}:
-        raise ValueError("alignment.source must be dataset_annotation or human_verified")
+    if result.get("source") not in {"dataset_annotation", "human_verified", "trajectory_llm"}:
+        raise ValueError("alignment.source must be dataset_annotation, human_verified or trajectory_llm")
+    if result["source"] == "trajectory_llm":
+        from .trajectory_alignment import validate_alignment_evidence
+
+        validate_alignment_evidence(result)
     result["reference"] = _text(result.get("reference"), "alignment.reference")
     if result["source"] == "human_verified":
         result["verified_by"] = _text(result.get("verified_by"), "alignment.verified_by")
@@ -102,6 +106,13 @@ def resolve_annotation(annotation, source):
         raise ValueError("label_source.kind must be trajectory_gold, dataset_gold, dataset_description or verified_description")
     label["reference"] = _text(label.get("reference"), "label_source.reference")
     label["text"] = _answer(label["text"])
+    if alignment["source"] == "trajectory_llm":
+        packet = alignment["evidence"]["packet"]
+        if (label["kind"] != "trajectory_gold" or label["text"] != packet["gold_answer_text"]
+                or packet["trajectory_sha256"] != source["inventory_provenance"]["trajectory_sha256"]
+                or str(packet["source_sample_id"]) != str(source["inventory_provenance"]["qa_id"])
+                or kind != alignment["evidence"]["candidate"]["fact_type"]):
+            raise ValueError("trajectory candidate differs from saved standard label or source")
     return {"annotation_id": annotation_id, "fact_type": kind, "label_source": label, "alignment": alignment}
 
 
@@ -140,5 +151,15 @@ def validate_source_grounding(record):
         raise ValueError("clip/phase labels require multiple observed frames")
     if record["verified"] is not False or record["verification"].get("human_verified") is not False:
         raise ValueError("source_grounded records must not claim a new human verification")
-    if record["verification"].get("decision") != "supported_by_source_annotation":
+    inferred = normalized["alignment"]["source"] == "trajectory_llm"
+    expected_status = "trajectory_aligned" if inferred else "source_grounded"
+    expected_decision = "candidate_from_trajectory" if inferred else "supported_by_source_annotation"
+    if record["verification"].get("status") != expected_status:
+        raise ValueError("inferred alignment must remain trajectory_aligned, not externally verified")
+    if inferred:
+        packet = normalized["alignment"]["evidence"]["packet"]
+        if (record["source_video_id"] != packet["source_video_id"]
+                or str(record.get("source_sample_id")) != str(packet["source_sample_id"])):
+            raise ValueError("trajectory candidate belongs to a different source")
+    if record["verification"].get("decision") != expected_decision:
         raise ValueError("source_grounded records need an annotation-based decision")

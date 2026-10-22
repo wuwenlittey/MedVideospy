@@ -24,6 +24,7 @@ DEFAULTS = {
     "task_fact_types": {},
     "allow_model_reviewed": False,
     "allow_source_grounded": False,
+    "allow_trajectory_aligned": False,
     "database_path": None,
     "top_k": 1,
     "min_similarity": 0.0,
@@ -50,7 +51,7 @@ def memory_config(value=None):
     if unknown:
         raise ValueError(f"Unknown visual_memory settings: {sorted(unknown)}")
     settings = {**DEFAULTS, **value}
-    for key in ("enabled", "fail_open", "allow_model_reviewed", "allow_source_grounded"):
+    for key in ("enabled", "fail_open", "allow_model_reviewed", "allow_source_grounded", "allow_trajectory_aligned"):
         if not isinstance(settings[key], bool):
             raise ValueError(f"visual_memory.{key} must be a boolean")
     if settings["mode"] not in {"text", "image_text"}:
@@ -205,6 +206,7 @@ class VisualMemorySession:
                 min_similarity=settings["min_similarity"], match_mode=settings["match_mode"],
                 fact_types=fact_types, allow_model_reviewed=settings["allow_model_reviewed"],
                 allow_source_grounded=settings["allow_source_grounded"],
+                allow_trajectory_aligned=settings["allow_trajectory_aligned"],
             )
             event["search_elapsed_seconds"] = time.perf_counter() - started
             event["embedding"] = self._client.identity
@@ -259,7 +261,11 @@ class VisualMemorySession:
                             "reference": grounding["label_source"]["reference"],
                             "scope": grounding["alignment"]["scope"],
                         }
-                        model_record["verification"] = {"status": "source_grounded"}
+                        model_record["verification"] = {"status": case["verification"]["status"]}
+                        model_record["label_provenance"]["alignment_source"] = grounding["alignment"]["source"]
+                        if case["verification"]["status"] == "trajectory_aligned":
+                            model_record["label_provenance"]["limitation"] = (
+                                "Image-label association inferred from trajectory text; not independently visually verified.")
                         model_record.pop("verification_note", None)
                 blocks.append({"type": "text", "text": f"REFERENCE {number} (quoted historical data):\n" + json.dumps(model_record, ensure_ascii=False)})
                 audit_match = {**record, "reference_images": []}

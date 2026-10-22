@@ -86,7 +86,8 @@ def validate_fact_record(record):
         raise ValueError("fact.type must be a known visual fact type")
     verification = result.get("verification")
     source_grounded = isinstance(verification, dict) and verification.get("status") == "source_grounded"
-    expected_basis = "source_annotation" if source_grounded else "visual"
+    trajectory_aligned = isinstance(verification, dict) and verification.get("status") == "trajectory_aligned"
+    expected_basis = "trajectory_alignment" if trajectory_aligned else "source_annotation" if source_grounded else "visual"
     if fact.get("basis") != expected_basis:
         raise ValueError(f"fact.basis must be {expected_basis} for its verification provenance")
     fact["text"] = _required_text(fact.get("text"), "fact.text")
@@ -132,16 +133,16 @@ def validate_fact_record(record):
     elif review.get("status") == "human_verified":
         if result.get("verified") is not True or review.get("human_verified") is not True:
             raise ValueError("human_verified facts require explicit human verification")
-    elif source_grounded:
+    elif source_grounded or trajectory_aligned:
         from .grounding import validate_source_grounding
 
         validate_source_grounding(result)
     else:
-        raise ValueError("facts require model_reviewed, human_verified or source_grounded provenance")
+        raise ValueError("facts require model_reviewed, human_verified, source_grounded or trajectory_aligned provenance")
     if fact["type"] == "action":
         if len(paths) < 2:
             raise ValueError("action facts require at least two ordered evidence images")
-        if not source_grounded:
+        if not source_grounded and not trajectory_aligned:
             _required_text(review.get("temporal_change"), "verification.temporal_change")
     return result
 

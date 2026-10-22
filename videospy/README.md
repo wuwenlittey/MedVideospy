@@ -100,6 +100,15 @@ inside the existing local observation call. Trajectory exports remain pending
 review until their image/label correspondence has been verified.
 
 For the current medical-video experiment, use
+[text-only trajectory alignment](../docs/devs/visual_fact_trajectory_alignment.md):
+`inventory-trajectories` reads saved standard answers, `align-trajectories` asks a
+text model to assess usability and select cited observed frames, and `assemble`
+checks the proposal against the original trajectory. Labels are copied exactly;
+uncertain associations stay pending. Build with `--allow-trajectory-aligned` and
+use `visual_facts_trajectory.yml` online; disable with `visual_facts_supervised_off.yml`.
+This is inferred alignment, not human or visual verification, and adds no online review.
+
+For sources that already have explicit frame/time annotations, use
 [source-supervised assembly](../docs/devs/visual_fact_supervised.md): read saved
 standard answers directly with `inventory-trajectories` (no dataset required),
 align correct labels/descriptions to observed keyframes or annotated local

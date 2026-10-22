@@ -7,6 +7,7 @@ tools:
     mode: image_text
     match_mode: fact
     allow_source_grounded: true
+    allow_trajectory_aligned: false
     allow_model_reviewed: false
     database_path: output/visual_memory/supervised_index_v3
     top_k: 2

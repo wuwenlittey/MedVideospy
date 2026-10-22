@@ -63,6 +63,11 @@ def main(argv=None) -> int:
     saved.add_argument("--schema", help="YAML field mappings for saved standard answers, options and metadata.")
     saved.add_argument("--video-root")
     saved.add_argument("--output", required=True)
+    align = commands.add_parser("align-trajectories", help="Text LLM selects cited candidate pairings; labels stay equal to saved GT.")
+    align.add_argument("--sources", required=True)
+    align.add_argument("--config", required=True, help="Text LLM configuration, separate from embedding settings.")
+    align.add_argument("--output", required=True)
+    align.add_argument("--resume", action="store_true")
     assemble = commands.add_parser("assemble", help="Pair existing trusted labels with observed evidence; no VLM calls.")
     assemble.add_argument("--sources", required=True, help="Inventory sources or existing annotated image-pair JSONL.")
     assemble.add_argument("--annotations", help="Optional explicit label/alignment JSONL, joined by original video AND QA ID.")
@@ -83,12 +88,14 @@ def main(argv=None) -> int:
     validate.add_argument("--require-verified", action="store_true")
     validate.add_argument("--allow-model-reviewed", action="store_true", help="Explicitly validate machine-reviewed facts for admission.")
     validate.add_argument("--allow-source-grounded", action="store_true", help="Admit externally supplied labels with explicit evidence annotations.")
+    validate.add_argument("--allow-trajectory-aligned", action="store_true", help="Admit text-LLM-inferred candidate pairings as a separate provenance class.")
     build = commands.add_parser("build", help="Build a new index only from reviewed train/dev cases.")
     build.add_argument("--cases", required=True)
     build.add_argument("--output", required=True)
     build.add_argument("--embedding-config", required=True)
     build.add_argument("--allow-model-reviewed", action="store_true", help="Experimental: admit supported machine-reviewed facts, preserving their provenance.")
     build.add_argument("--allow-source-grounded", action="store_true", help="Admit source-grounded facts without reclassifying them as human-reviewed.")
+    build.add_argument("--allow-trajectory-aligned", action="store_true", help="Experimental: admit cited text-LLM associations, not visual verification.")
     probe = commands.add_parser("probe", help="Check one image embedding request without calling a VLM.")
     probe.add_argument("--embedding-config", required=True)
     probe.add_argument("--image", required=True)
@@ -105,6 +112,13 @@ def main(argv=None) -> int:
             schema = _mining_config(args.schema, "trajectory_inventory") if args.schema else {}
             result = inventory_trajectories(args.trajectories, args.splits, args.output,
                                            schema=schema, video_root=args.video_root)
+        elif args.command == "align-trajectories":
+            from .trajectory_alignment import align_trajectories
+
+            config = _mining_config(args.config, "trajectory_alignment")
+            if args.resume:
+                config["resume"] = True
+            result = align_trajectories(args.sources, args.output, config)
         elif args.command == "assemble":
             from .supervised import assemble_facts
 
@@ -133,13 +147,14 @@ def main(argv=None) -> int:
             for case in cases:
                 if case.get("record_kind") == "visual_fact":
                     validate_fact_record(case)
-                if args.require_verified or args.allow_model_reviewed or args.allow_source_grounded:
+                if args.require_verified or args.allow_model_reviewed or args.allow_source_grounded or args.allow_trajectory_aligned:
                     validate_case(case, allow_model_reviewed=args.allow_model_reviewed,
-                                  allow_source_grounded=args.allow_source_grounded)
+                                  allow_source_grounded=args.allow_source_grounded, allow_trajectory_aligned=args.allow_trajectory_aligned)
             result = {"cases": len(cases), "verified": sum(case["verified"] for case in cases),
                       "model_reviewed": sum(case.get("verification", {}).get("status") == "model_reviewed" for case in cases),
                       "source_grounded": sum(case.get("verification", {}).get("status") == "source_grounded" for case in cases),
-                      "pending": sum(not case["verified"] and case.get("verification", {}).get("status") not in {"model_reviewed", "source_grounded"} for case in cases)}
+                      "trajectory_aligned": sum(case.get("verification", {}).get("status") == "trajectory_aligned" for case in cases),
+                      "pending": sum(not case["verified"] and case.get("verification", {}).get("status") not in {"model_reviewed", "source_grounded", "trajectory_aligned"} for case in cases)}
         elif args.command == "build":
             output = ensure_new_output(args.output)
             cases = validate_manifest(args.cases, require_verified=False)
@@ -148,12 +163,15 @@ def main(argv=None) -> int:
 
             for case in cases:
                 validate_case(case, max_images=config.get("max_images_per_case", 16),
-                              allow_model_reviewed=args.allow_model_reviewed, allow_source_grounded=args.allow_source_grounded)
+                              allow_model_reviewed=args.allow_model_reviewed, allow_source_grounded=args.allow_source_grounded,
+                              allow_trajectory_aligned=args.allow_trajectory_aligned)
             policy = {}
             if args.allow_model_reviewed:
                 policy["allow_model_reviewed"] = True
             if args.allow_source_grounded:
                 policy["allow_source_grounded"] = True
+            if args.allow_trajectory_aligned:
+                policy["allow_trajectory_aligned"] = True
             build_index(Path(args.cases).resolve(), output, config, **policy)
             result = {"index": str(output)}
         else:

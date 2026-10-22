@@ -287,7 +287,10 @@ def assemble_facts(sources_path, output_dir, config=None, *, annotations_path=No
             if previous != source["split"]:
                 raise ValueError("same resolved media occurs in multiple partitions")
         plans.append(plan)
-    binding = {"version": 1, "pipeline": "source_grounded_no_vlm", "sources_sha256": _sha256(sources_path),
+    pipeline = ("trajectory_aligned_assembly" if any(isinstance(a, dict) and
+                isinstance(a.get("alignment"), dict) and a["alignment"].get("source") == "trajectory_llm"
+                for source in sources for a in source["supervision"]) else "source_grounded_no_vlm")
+    binding = {"version": 1, "pipeline": pipeline, "sources_sha256": _sha256(sources_path),
                "annotations_sha256": _sha256(annotations_path) if annotations_path else None,
                "source_signatures": [plan["signature"] if plan else None for plan in plans],
                "settings": {key: value for key, value in settings.items() if key != "resume"}}
@@ -336,6 +339,11 @@ def assemble_facts(sources_path, output_dir, config=None, *, annotations_path=No
         for raw_annotation in source["supervision"]:
             try:
                 annotation = resolve_annotation(raw_annotation, source)
+                inferred = annotation["alignment"]["source"] == "trajectory_llm"
+                if inferred:
+                    from .trajectory_alignment import verify_against_trajectory
+
+                    verify_against_trajectory(annotation, source, plan, frames, calls)
                 selected = _select_frames(frames, annotation, tolerance)
                 if len(selected) > settings["max_images_per_fact"]:
                     raise ValueError("annotated_evidence_exceeds_image_budget; supply explicit annotated keyframes")
@@ -367,14 +375,16 @@ def assemble_facts(sources_path, output_dir, config=None, *, annotations_path=No
                           "question": plan["question"], "answer_text": text, **prefix, "split": source["split"],
                           "image_paths": paths, "timestamps": [frame["timestamp"] for frame in selected],
                           "evidence_scope": "frame" if len(paths) == 1 else "clip", "verified": False,
-                          "verification_note": "Existing source label with explicit external alignment; no VLM extraction or review.",
+                          "verification_note": ("Saved standard label with text-LLM-inferred alignment; not visual verification."
+                                                if inferred else "Existing source label with explicit external alignment; no VLM extraction or review."),
                           "fact": {"type": annotation["fact_type"], "text": text, "entity": text,
-                                   "basis": "source_annotation", "conditions": [], "evidence_frame_ids": ids},
+                                   "basis": "trajectory_alignment" if inferred else "source_annotation", "conditions": [], "evidence_frame_ids": ids},
                           "grounding": {**annotation, "annotation_sha256": _object_hash(annotation),
                                         "timestamp_tolerance": tolerance},
-                          "verification": {"status": "source_grounded", "human_verified": False,
-                                           "decision": "supported_by_source_annotation", "evidence_frame_ids": ids,
-                                           "reason": "Label and temporal scope supplied externally; no new medical verification."},
+                          "verification": {"status": "trajectory_aligned" if inferred else "source_grounded", "human_verified": False,
+                                           "decision": "candidate_from_trajectory" if inferred else "supported_by_source_annotation", "evidence_frame_ids": ids,
+                                           "reason": "Cited trajectory association, not independent visual verification." if inferred else
+                                                     "Label and temporal scope supplied externally; no new medical verification."},
                           "provenance": {"source_manifest_sha256": binding["sources_sha256"],
                                          "annotations_sha256": binding["annotations_sha256"],
                                          "source_signature": plan["signature"],
@@ -404,14 +414,17 @@ def assemble_facts(sources_path, output_dir, config=None, *, annotations_path=No
     for name, rows in (("cases.jsonl", selected), ("pending.jsonl", pending)):
         (output / name).write_text("".join(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n" for row in rows), encoding="utf-8")
     by_type = Counter(row["fact"]["type"] for row in selected)
-    report = {"pipeline": "source_grounded_no_vlm", "status": "completed_with_pending" if pending else "completed",
+    report = {"pipeline": pipeline, "status": "completed_with_pending" if pending else "completed",
               "cases_path": str(output / "cases.jsonl"), "pending_path": str(output / "pending.jsonl"),
               "report_path": str(output / "report.json"), "sources": len(sources),
-              "selected_fact_count": len(selected), "source_grounded_before_selection": len(records),
+              "selected_fact_count": len(selected),
+              "source_grounded_before_selection": sum(r["verification"]["status"] == "source_grounded" for r in records),
+              "trajectory_aligned_before_selection": sum(r["verification"]["status"] == "trajectory_aligned" for r in records),
               "facts_by_type": dict(by_type), "missing_fact_types": [kind for kind in FACT_TYPES if not by_type[kind]],
               "facts_by_task": dict(Counter(row["task_type"] for row in selected)),
               "facts_by_video": dict(Counter(row["source_video_id"] for row in selected)),
               "labels_by_source": dict(Counter(row["grounding"]["label_source"]["kind"] for row in selected)),
+              "alignment_by_status": dict(Counter(row["verification"]["status"] for row in selected)),
               "trajectory_outcomes": dict(outcomes), "pending_count": len(pending),
               "pending_reasons": dict(Counter(row["reason"] for row in pending)),
               "duplicate_facts": duplicates, "quota_excluded_fact_ids": excluded,

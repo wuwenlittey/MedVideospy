@@ -1,0 +1,25 @@
+# Apply LAST after base/WeMM configs. Text-LLM associations remain experimental.
+tools:
+  visual_memory:
+    enabled: true
+    usage_mode: inject
+    mode: image_text
+    match_mode: fact
+    allow_trajectory_aligned: true
+    allow_source_grounded: false
+    allow_model_reviewed: false
+    database_path: output/visual_memory/trajectory_index_v4
+    top_k: 2
+    min_similarity: 0.0
+    reference_frames: 16
+    query_frames: 16
+    reference_short_side: 256
+    max_calls_per_question: 4
+    fail_open: true
+    task_fact_types: {}
+  memory_search:
+    enabled: false
+  clip_skim:
+    refinement:
+      high_resolution: false
+      temporal_fill: false

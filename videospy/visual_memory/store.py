@@ -51,7 +51,7 @@ def _text(record, key, *, required=False):
     return value.strip()
 
 
-def _validate_case(record, max_images, *, allow_model_reviewed=False, allow_source_grounded=False):
+def _validate_case(record, max_images, *, allow_model_reviewed=False, allow_source_grounded=False, allow_trajectory_aligned=False):
     if not isinstance(record, dict):
         raise ValueError("each case must be a JSON object")
     is_fact = record.get("record_kind") == "visual_fact"
@@ -62,11 +62,14 @@ def _validate_case(record, max_images, *, allow_model_reviewed=False, allow_sour
         raise ValueError("answer_text must contain answer semantics, not only an option letter")
     machine_fact = is_fact and result["verification"]["status"] == "model_reviewed"
     source_fact = is_fact and result["verification"]["status"] == "source_grounded"
+    inferred_fact = is_fact and result["verification"]["status"] == "trajectory_aligned"
+    if inferred_fact and not allow_trajectory_aligned:
+        raise ValueError("trajectory_aligned facts require explicit allow_trajectory_aligned")
     if machine_fact and not allow_model_reviewed:
         raise ValueError("model_reviewed visual facts require explicit allow_model_reviewed")
     if source_fact and not allow_source_grounded:
         raise ValueError("source_grounded visual facts require explicit allow_source_grounded")
-    if not machine_fact and not source_fact and record.get("verified") is not True:
+    if not machine_fact and not source_fact and not inferred_fact and record.get("verified") is not True:
         raise ValueError(f"case {result['case_id']} is not explicitly verified")
     if record.get("split") not in {"train", "dev"}:
         raise ValueError("visual memory only accepts train/dev cases")
@@ -99,7 +102,7 @@ def _validate_case(record, max_images, *, allow_model_reviewed=False, allow_sour
     return result
 
 
-def validate_case(record, max_images=16, *, allow_model_reviewed=False, allow_source_grounded=False):
+def validate_case(record, max_images=16, *, allow_model_reviewed=False, allow_source_grounded=False, allow_trajectory_aligned=False):
     """Validate a reviewed case without opening images or contacting a model."""
     if isinstance(max_images, bool) or not isinstance(max_images, int) or not 1 <= max_images <= 64:
         raise ValueError("max_images must be an integer between 1 and 64")
@@ -107,8 +110,10 @@ def validate_case(record, max_images=16, *, allow_model_reviewed=False, allow_so
         raise ValueError("allow_model_reviewed must be a boolean")
     if not isinstance(allow_source_grounded, bool):
         raise ValueError("allow_source_grounded must be a boolean")
+    if not isinstance(allow_trajectory_aligned, bool):
+        raise ValueError("allow_trajectory_aligned must be a boolean")
     return _validate_case(record, max_images, allow_model_reviewed=allow_model_reviewed,
-                          allow_source_grounded=allow_source_grounded)
+                          allow_source_grounded=allow_source_grounded, allow_trajectory_aligned=allow_trajectory_aligned)
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -132,7 +137,7 @@ def _inside(root: Path, relative: str) -> Path:
 
 
 def build_index(manifest_path, output_dir, embedding_config, *, embedder=None, allow_model_reviewed=False,
-                allow_source_grounded=False):
+                allow_source_grounded=False, allow_trajectory_aligned=False):
     """Create a new immutable index; refuse existing outputs and clean staging.
 
     ``max_images_per_case`` in embedding_config defaults to 16 (range 1..64).
@@ -143,6 +148,8 @@ def build_index(manifest_path, output_dir, embedding_config, *, embedder=None, a
         raise ValueError("allow_model_reviewed must be a boolean")
     if not isinstance(allow_source_grounded, bool):
         raise ValueError("allow_source_grounded must be a boolean")
+    if not isinstance(allow_trajectory_aligned, bool):
+        raise ValueError("allow_trajectory_aligned must be a boolean")
     source, output = Path(manifest_path).resolve(), Path(output_dir).absolute()
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"index output already exists: {output}")
@@ -157,7 +164,7 @@ def build_index(manifest_path, output_dir, embedding_config, *, embedder=None, a
             continue
         try:
             case = _validate_case(json.loads(line), max_images, allow_model_reviewed=allow_model_reviewed,
-                                  allow_source_grounded=allow_source_grounded)
+                                  allow_source_grounded=allow_source_grounded, allow_trajectory_aligned=allow_trajectory_aligned)
         except (ValueError, TypeError) as exc:
             raise ValueError(f"invalid visual memory case on line {line_number}: {exc}") from exc
         if case["case_id"] in seen:
@@ -222,7 +229,8 @@ def build_index(manifest_path, output_dir, embedding_config, *, embedder=None, a
             "aggregation": AGGREGATION, "embedder": identity,
             "build_settings": {"max_images_per_case": max_images},
             "admission_policy": {"allow_model_reviewed": allow_model_reviewed,
-                                 "allow_source_grounded": allow_source_grounded},
+                                 "allow_source_grounded": allow_source_grounded,
+                                 "allow_trajectory_aligned": allow_trajectory_aligned},
             "source_manifest_sha256": _sha(source_bytes), "files": hashes,
         }
         (staging / "manifest.json").write_bytes(_json(manifest) + b"\n")
@@ -270,12 +278,15 @@ class VisualMemoryStore:
         if not isinstance(policy, dict) or not isinstance(policy.get("allow_model_reviewed"), bool):
             raise ValueError("index manifest has an invalid admission policy")
         self.allow_model_reviewed = policy["allow_model_reviewed"]
+        self.allow_trajectory_aligned = policy.get("allow_trajectory_aligned", False)
+        if not isinstance(self.allow_trajectory_aligned, bool):
+            raise ValueError("invalid trajectory-aligned admission policy")
         self.allow_source_grounded = policy.get("allow_source_grounded", False)
         if not isinstance(self.allow_source_grounded, bool):
             raise ValueError("index manifest has an invalid source-grounded admission policy")
         for line in _inside(self.path, "records.jsonl").read_text(encoding="utf-8").splitlines():
             case = _validate_case(json.loads(line), max_images, allow_model_reviewed=self.allow_model_reviewed,
-                                  allow_source_grounded=self.allow_source_grounded)
+                                  allow_source_grounded=self.allow_source_grounded, allow_trajectory_aligned=self.allow_trajectory_aligned)
             if case["case_id"] in ids:
                 raise ValueError("duplicate case_id in index")
             ids.add(case["case_id"])
@@ -299,7 +310,7 @@ class VisualMemoryStore:
         self.identity = manifest["embedder"]
 
     def search(self, query_vector, *, context, top_k=2, min_similarity=0.0,
-               match_mode="task", fact_types=None, allow_model_reviewed=False, allow_source_grounded=False):
+               match_mode="task", fact_types=None, allow_model_reviewed=False, allow_source_grounded=False, allow_trajectory_aligned=False):
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
             raise ValueError("top_k must be a positive integer")
         if isinstance(min_similarity, bool) or not isinstance(min_similarity, (float, int)) or not math.isfinite(min_similarity) or not -1 <= min_similarity <= 1:
@@ -312,6 +323,8 @@ class VisualMemoryStore:
             raise ValueError("allow_model_reviewed must be a boolean")
         if not isinstance(allow_source_grounded, bool):
             raise ValueError("allow_source_grounded must be a boolean")
+        if not isinstance(allow_trajectory_aligned, bool):
+            raise ValueError("allow_trajectory_aligned must be a boolean")
         if match_mode == "task" and fact_types is not None:
             raise ValueError("fact_types requires explicit match_mode=fact")
         current = {key: _text(context, key, required=key in {"source_video_id", "task_type"})
@@ -330,12 +343,16 @@ class VisualMemoryStore:
                             and case.get("verification", {}).get("status") == "model_reviewed")
             source_fact = (case.get("record_kind") == "visual_fact"
                            and case.get("verification", {}).get("status") == "source_grounded")
+            inferred_fact = (case.get("record_kind") == "visual_fact"
+                             and case.get("verification", {}).get("status") == "trajectory_aligned")
+            if inferred_fact and not allow_trajectory_aligned:
+                reasons.append("trajectory_aligned_not_enabled")
             if machine_fact and not allow_model_reviewed:
                 reasons.append("model_reviewed_not_enabled")
             if source_fact and not allow_source_grounded:
                 reasons.append("source_grounded_not_enabled")
             if ((case.get("verified") is not True and not (machine_fact and allow_model_reviewed)
-                 and not (source_fact and allow_source_grounded))
+                 and not (source_fact and allow_source_grounded) and not (inferred_fact and allow_trajectory_aligned))
                     or case.get("split") not in {"train", "dev"}):
                 reasons.append("unverified_or_nontraining_case")
             for field in _IDS:

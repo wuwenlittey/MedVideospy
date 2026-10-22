@@ -1,5 +1,7 @@
 # 已有正确标签驱动的图文经验库
 
+普通作答轨迹没有现成图文对应标注时，使用新增的[文本大模型轨迹整理流程](visual_fact_trajectory_alignment.md)：在 inventory 与 assemble 之间运行 `align-trajectories`，让文本模型判断可用性并提出带引用的候选配对。该来源标记为 `trajectory_aligned`，需要独立的建库/在线准入开关；不能冒充本文的外部标注 `source_grounded`。下面保留无模型、已有明确标注的路径用于对照。
+
 本版把离线工作改成“整理历史轨迹中已有正确描述和对应画面”。`inventory-trajectories` 直接读取轨迹保存的标准答案，不需要原数据集；`assemble` 不调用 9B 或其他 VLM，不重新看图生成标签，不把最终答对当作图文标注。在线使用 `visual_facts_supervised.yml`：WeMM 检索参考后，由原局部观察模型完成一次观察。旧在线 support/conflict review 代码、调用入口及两个配置已删除。
 
 ## 1. 来源和使用范围

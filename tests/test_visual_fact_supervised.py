@@ -357,7 +357,8 @@ class SupervisedFactsTests(unittest.TestCase):
                            "--embedding-config", str(config), "--allow-source-grounded"])
         self.assertEqual(result, 0)
         policy = json.loads((self.root / "cli-index/manifest.json").read_text())["admission_policy"]
-        self.assertEqual(policy, {"allow_model_reviewed": False, "allow_source_grounded": True})
+        self.assertEqual(policy, {"allow_model_reviewed": False, "allow_source_grounded": True,
+                                  "allow_trajectory_aligned": False})
 
     def test_corrupt_video_decode_is_reported_without_aborting_other_sources(self):
         source = self.source()

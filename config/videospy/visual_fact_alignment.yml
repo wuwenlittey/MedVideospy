@@ -1,0 +1,16 @@
+# OFFLINE TEXT model, not a vision reviewer and not the WeMM embedding model.
+trajectory_alignment:
+  llm:
+    model_name_env: FACT_ALIGNER_MODEL
+    api_base_env: FACT_ALIGNER_API_BASE
+    api_key_env: FACT_ALIGNER_API_KEY
+    temperature: 0.0
+    max_completion_tokens: 4096
+    max_retries: 2
+    request_timeout: 180
+  # First run processes 5 trajectories. --resume processes the next batch.
+  # Set null for the complete batch. Does not filter by final QA correctness.
+  max_sources: 5
+  # Oversized packets remain pending; never silently truncate evidence.
+  max_packet_chars: 60000
+  resume: false
