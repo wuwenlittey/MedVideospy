@@ -1,0 +1,5 @@
+# Apply last to return to the original observation path; no index/embedding calls.
+tools:
+  visual_memory:
+    enabled: false
+    usage_mode: inject

@@ -1,3 +1,5 @@
+# LEGACY EXPERIMENT: requires CLI --allow-generated-labels.
+# Prefer visual_fact_assembly.yml + assemble for existing correct labels.
 # Offline VLM extraction/review. This is NOT the WeMM embedding configuration.
 # Model name follows the existing ModelClient/LiteLLM convention, e.g.
 # FACT_MINER_MODEL=openai/<your-served-vision-model-name>

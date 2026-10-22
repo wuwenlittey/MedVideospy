@@ -1,4 +1,4 @@
-"""Opt-in historical references, or bounded post-observation visual fact review."""
+"""Opt-in historical references within the original single observation call."""
 
 import base64
 import hashlib
@@ -23,7 +23,7 @@ DEFAULTS = {
     "fact_types": None,
     "task_fact_types": {},
     "allow_model_reviewed": False,
-    "review": {},
+    "allow_source_grounded": False,
     "database_path": None,
     "top_k": 1,
     "min_similarity": 0.0,
@@ -43,17 +43,18 @@ def memory_config(value=None):
         value = {}
     if not isinstance(value, dict):
         raise ValueError("tools.visual_memory must be a mapping")
+    if "review" in value or value.get("usage_mode", "inject") != "inject":
+        raise ValueError("Online visual-memory review has been removed. Use usage_mode: inject and "
+                         "enabled: true/false; remove the old review configuration.")
     unknown = set(value) - set(DEFAULTS)
     if unknown:
         raise ValueError(f"Unknown visual_memory settings: {sorted(unknown)}")
     settings = {**DEFAULTS, **value}
-    for key in ("enabled", "fail_open", "allow_model_reviewed"):
+    for key in ("enabled", "fail_open", "allow_model_reviewed", "allow_source_grounded"):
         if not isinstance(settings[key], bool):
             raise ValueError(f"visual_memory.{key} must be a boolean")
     if settings["mode"] not in {"text", "image_text"}:
         raise ValueError("visual_memory.mode must be text or image_text")
-    if settings["usage_mode"] not in {"inject", "review", "current_only_review"}:
-        raise ValueError("visual_memory.usage_mode must be inject, review, or current_only_review")
     if settings["match_mode"] not in {"task", "fact"}:
         raise ValueError("visual_memory.match_mode must be task or fact")
     from .facts import FACT_TYPES, normalize_fact_task, requested_fact_types
@@ -72,8 +73,6 @@ def memory_config(value=None):
             raise ValueError("visual_memory.task_fact_types contains conflicting task aliases")
         normalized[normalized_key] = list(values)
     settings["task_fact_types"] = normalized
-    from .review import review_config
-    settings["review"] = review_config(settings["review"])
     for key in ("top_k", "query_frames", "reference_frames", "reference_short_side", "max_calls_per_question"):
         number = settings[key]
         if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
@@ -89,7 +88,7 @@ def memory_config(value=None):
     for key in ("embedding", "context"):
         if not isinstance(settings[key], dict):
             raise ValueError(f"visual_memory.{key} must be a mapping")
-    if settings["enabled"] and settings["usage_mode"] != "current_only_review" and not settings["database_path"]:
+    if settings["enabled"] and not settings["database_path"]:
         raise ValueError("Enabled visual_memory requires database_path")
     return settings
 
@@ -121,19 +120,16 @@ class VisualMemorySession:
         self.settings = memory_config(settings)
         self.audit = []
         self._attempts = 0
-        self._review_attempts = 0
         self._client = None
         self._store = None
 
     def reset(self):
         self.audit.clear()
         self._attempts = 0
-        self._review_attempts = 0
 
     def summary(self):
         # Never serialize credentials or arbitrary request templates to trajectories.
-        result = {key: self.settings[key] for key in DEFAULTS if key not in {"embedding", "context", "review"}}
-        result["review"] = {key: value for key, value in self.settings["review"].items() if key != "model"}
+        result = {key: self.settings[key] for key in DEFAULTS if key not in {"embedding", "context"}}
         return result
 
     def _load(self):
@@ -147,12 +143,9 @@ class VisualMemorySession:
                 raise ValueError("Visual memory embedding configuration differs from its index; rebuild the index with this configuration")
             self._client, self._store = client, store
 
-    def augment(self, content, *, frames, timestamps, parameters, tool_name, _for_review=False):
+    def augment(self, content, *, frames, timestamps, parameters, tool_name):
         settings = self.settings
         if not settings["enabled"] or tool_name not in settings["apply_to"]:
-            return content
-        if settings["usage_mode"] != "inject" and not _for_review:
-            # Review modes keep the first VLM input exactly current-only.
             return content
         event = {"tool": tool_name, "mode": settings["mode"], "status": "pending", "matches": []}
         self.audit.append(event)
@@ -211,6 +204,7 @@ class VisualMemorySession:
                 query / norm, context=context, top_k=settings["top_k"],
                 min_similarity=settings["min_similarity"], match_mode=settings["match_mode"],
                 fact_types=fact_types, allow_model_reviewed=settings["allow_model_reviewed"],
+                allow_source_grounded=settings["allow_source_grounded"],
             )
             event["search_elapsed_seconds"] = time.perf_counter() - started
             event["embedding"] = self._client.identity
@@ -249,11 +243,24 @@ class VisualMemorySession:
                           "timestamps": case["timestamps"], "verification_note": case["verification_note"]}
                 if case.get("record_kind") == "visual_fact":
                     record.update(record_kind="visual_fact", fact=case["fact"], verification=case["verification"])
+                    if case.get("grounding"):
+                        record["grounding"] = case["grounding"]
                 model_record = dict(record)
                 if case.get("record_kind") == "visual_fact":
                     # Fact semantics replace the old QA label; its distractors
                     # need not prime the current observation.
                     model_record.pop("question", None)
+                    # Preserve full labels/options in audit, but do not expose old
+                    # distractors, verification prose or QA predictions to the observer.
+                    if "grounding" in model_record:
+                        grounding = model_record.pop("grounding")
+                        model_record["label_provenance"] = {
+                            "kind": grounding["label_source"]["kind"],
+                            "reference": grounding["label_source"]["reference"],
+                            "scope": grounding["alignment"]["scope"],
+                        }
+                        model_record["verification"] = {"status": "source_grounded"}
+                        model_record.pop("verification_note", None)
                 blocks.append({"type": "text", "text": f"REFERENCE {number} (quoted historical data):\n" + json.dumps(model_record, ensure_ascii=False)})
                 audit_match = {**record, "reference_images": []}
                 if settings["mode"] == "image_text":
@@ -282,69 +289,3 @@ class VisualMemorySession:
             if not settings["fail_open"]:
                 raise
             return content
-
-    def review(self, content, *, original_observation, frames, timestamps,
-               parameters, tool_name, tool_model):
-        """Append validated narrow checks; failures never replace raw observation."""
-        settings = self.settings
-        if (not settings["enabled"] or settings["usage_mode"] == "inject"
-                or tool_name not in settings["apply_to"]):
-            return original_observation
-        event = {"tool": tool_name, "mode": settings["mode"], "usage_mode": settings["usage_mode"],
-                 "status": "pending", "matches": [], "original_observation": original_observation}
-        if self._review_attempts >= settings["review"]["max_calls_per_question"]:
-            event.update(status="skipped", reason="question_review_budget")
-            self.audit.append(event)
-            return original_observation
-        current_only = settings["usage_mode"] == "current_only_review"
-        try:
-            if current_only:
-                self.audit.append(event)
-                references = []
-            else:
-                before = len(self.audit)
-                references = self.augment([], frames=frames, timestamps=timestamps,
-                                          parameters=parameters, tool_name=tool_name, _for_review=True)
-                if len(self.audit) != before + 1:
-                    raise ValueError("review retrieval did not produce one audit event")
-                event = self.audit[-1]
-                event.update(usage_mode=settings["usage_mode"], original_observation=original_observation)
-                if event["status"] != "injected":
-                    event["review_status"] = "skipped_without_references"
-                    return original_observation
-            from .review import run_fact_review
-            from .vlm import resolve_model_config, safe_model_identity
-            model = resolve_model_config(settings["review"]["model"], fallback=tool_model)
-            event["review_model"] = safe_model_identity(model)
-            self._review_attempts += 1
-            event["review_call_number"] = self._review_attempts
-            started = time.perf_counter()
-            try:
-                result = run_fact_review(
-                    content=content, original_observation=original_observation,
-                    timestamps=timestamps, matches=event["matches"], reference_content=references,
-                    model_config=model, current_only=current_only,
-                    max_checks=settings["review"]["max_checks"],
-                )
-            finally:
-                event["review_elapsed_seconds"] = time.perf_counter() - started
-            event.update(result)
-            checks = result["validated_review"]["checks"]
-            actionable = [check for check in checks if check["status"] != "unknown"]
-            if not actionable:
-                event.update(status="reviewed", review_status="unknown_only")
-                return original_observation
-            event.update(status="reviewed", review_status="validated_checks_appended")
-            return original_observation + (
-                "\n\nAdditional visual fact review (model analysis, not verified ground truth). "
-                "The original observation above is retained; narrow checks below may be wrong. "
-                "Historical reference labels do not establish facts in this video:\n"
-                + json.dumps({"checks": actionable}, ensure_ascii=False)
-            )
-        except Exception as error:
-            # Credentials and raw service errors must not enter trajectories.
-            if not any(item is event for item in self.audit):
-                self.audit.append(event)
-            event.update(status="review_failed", review_status="kept_original",
-                         reason=type(error).__name__)
-            return original_observation

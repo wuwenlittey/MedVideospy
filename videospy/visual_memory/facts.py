@@ -84,8 +84,11 @@ def validate_fact_record(record):
     fact = result.get("fact")
     if not isinstance(fact, dict) or fact.get("type") not in FACT_TYPES:
         raise ValueError("fact.type must be a known visual fact type")
-    if fact.get("basis") != "visual":
-        raise ValueError("fact.basis must be visual; answers and prior knowledge are not frame evidence")
+    verification = result.get("verification")
+    source_grounded = isinstance(verification, dict) and verification.get("status") == "source_grounded"
+    expected_basis = "source_annotation" if source_grounded else "visual"
+    if fact.get("basis") != expected_basis:
+        raise ValueError(f"fact.basis must be {expected_basis} for its verification provenance")
     fact["text"] = _required_text(fact.get("text"), "fact.text")
     fact["entity"] = _required_text(fact.get("entity"), "fact.entity")
     if result["answer_text"] != fact["text"]:
@@ -129,12 +132,17 @@ def validate_fact_record(record):
     elif review.get("status") == "human_verified":
         if result.get("verified") is not True or review.get("human_verified") is not True:
             raise ValueError("human_verified facts require explicit human verification")
+    elif source_grounded:
+        from .grounding import validate_source_grounding
+
+        validate_source_grounding(result)
     else:
-        raise ValueError("facts require model_reviewed or human_verified provenance")
+        raise ValueError("facts require model_reviewed, human_verified or source_grounded provenance")
     if fact["type"] == "action":
         if len(paths) < 2:
             raise ValueError("action facts require at least two ordered evidence images")
-        _required_text(review.get("temporal_change"), "verification.temporal_change")
+        if not source_grounded:
+            _required_text(review.get("temporal_change"), "verification.temporal_change")
     return result
 
 

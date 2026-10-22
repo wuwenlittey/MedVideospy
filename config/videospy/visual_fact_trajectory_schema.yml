@@ -1,0 +1,15 @@
+# Offline input adapter. All gold_fields must be SAVED STANDARD ANSWERS.
+# Never map final_answer/prediction to gold_fields. No dataset is opened.
+trajectory_inventory:
+  id_fields: [uid, sample_id, id]
+  video_fields: [source_video_id, video_id, video_path_original, video_path, metadata.source_video_id, metadata.video_id]
+  question_fields: [question, metadata.question]
+  gold_fields: [gold_option, correct_answer, ground_truth, gt_answer, reference_answer, metadata.gold_option, metadata.correct_answer, metadata.ground_truth, evaluation.correct_answer]
+  options_fields: [options, choices, metadata.options, metadata.choices]
+  task_fields: [task_type, task_name, qa_type, metadata.task_type]
+  annotations_fields: [visual_fact_annotations, supervision, metadata.visual_fact_annotations]
+  # Integer standard answers require explicit index_0 or index_1.
+  gold_format: letter_or_text
+  # Supports a contiguous single-line A./B./C./D. block in question text.
+  options_from_question: true
+  default_task_type: unknown

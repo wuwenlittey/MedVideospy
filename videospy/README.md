@@ -99,8 +99,15 @@ an existing WeMM embedding service and supports text or image/text references
 inside the existing local observation call. Trajectory exports remain pending
 review until their image/label correspondence has been verified.
 
-Batch VLM fact mining and optional post-observation comparison are described in
-[the visual fact guide](../docs/devs/visual_fact_memory.md). They inventory whole
-trajectory collections, retain machine-review provenance, support explicit
-cross-task fact compatibility, and provide a current-only review control. The
-original case-injection path remains available for isolated comparisons.
+For the current medical-video experiment, use
+[source-supervised assembly](../docs/devs/visual_fact_supervised.md): read saved
+standard answers directly with `inventory-trajectories` (no dataset required),
+align correct labels/descriptions to observed keyframes or annotated local
+intervals, and index them with the existing WeMM service. The new
+`visual_facts_supervised.yml` preset uses one reference-assisted observation call
+and excludes model-generated facts; `visual_facts_supervised_off.yml` disables it. Assembly
+makes zero VLM calls; missing source labels/alignment are exported as pending.
+
+[VLM mining](../docs/devs/visual_fact_memory.md) remains a legacy offline experiment
+requiring explicit `--allow-generated-labels`. Online post-observation review
+and its two presets have been removed; remove old `review:` overrides on migration.

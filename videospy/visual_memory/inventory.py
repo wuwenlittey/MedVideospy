@@ -186,7 +186,8 @@ def inventory_sources(trajectories_dir, dataset_path, splits_path, output_dir, *
             if not isinstance(task, str) or not task.strip():
                 raise ValueError("missing_task_type")
             source = {"trajectory_path": str(path), "source_video_id": partition["source_video_id"],
-                      "source_sample_id": uid, "split": partition["split"], "task_type": task.strip()}
+                      "source_sample_id": uid, "split": partition["split"], "task_type": task.strip(),
+                      "question": qa["question"]}
             for key in ("patient_id", "source_id", "procedure", "num_frames", "max_frames"):
                 if partition.get(key) is not None:
                     source[key] = str(partition[key]) if key in {"patient_id", "source_id"} else partition[key]
@@ -212,6 +213,12 @@ def inventory_sources(trajectories_dir, dataset_path, splits_path, output_dir, *
             # Gold is explicit dataset information, never the model's answer.
             if isinstance(qa.get("answer"), str) and isinstance(qa.get("options"), (list, dict)):
                 source.update(gold_option=qa["answer"], options=qa["options"])
+            # Only explicitly prepared annotations are carried through. Tool
+            # arguments and a correct final answer cannot establish alignment.
+            if "visual_fact_annotations" in qa:
+                if not isinstance(qa["visual_fact_annotations"], list):
+                    raise ValueError("visual_fact_annotations_must_be_a_list")
+                source["supervision"] = qa["visual_fact_annotations"]
             source["inventory_provenance"] = {
                 "dataset_sha256": dataset_hash, "split_manifest_sha256": split_hash,
                 "trajectory_sha256": _hash(path), "dataset_video_key": partition["dataset_video_key"],

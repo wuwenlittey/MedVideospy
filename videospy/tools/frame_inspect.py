@@ -161,7 +161,6 @@ def execute_frame_inspect(config: dict, parameters: dict) -> str:
         }
     )
 
-    current_content = content
     memory_session = parameters.get("_visual_memory_session")
     if memory_session is not None:
         content = memory_session.augment(
@@ -173,12 +172,6 @@ def execute_frame_inspect(config: dict, parameters: dict) -> str:
         messages=[{"role": "user", "content": content}]
     )
     observation = response["content"]
-    if memory_session is not None:
-        observation = memory_session.review(
-            current_content, original_observation=observation,
-            frames=frames, timestamps=actual_timestamps, parameters=parameters,
-            tool_name="frame_inspect", tool_model=config["model"],
-        )
     actual_text = ", ".join(f"{timestamp:.3f}s" for timestamp in actual_timestamps)
     requested_text = ", ".join(f"{timestamp:.3f}s" for timestamp in timestamps)
     return (

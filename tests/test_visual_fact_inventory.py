@@ -44,6 +44,19 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(len(report["tasks"]), 2)
         self.assertEqual(self.sources(report)[0]["source_video_id"], "original-a")
 
+    def test_explicit_dataset_fact_annotations_are_preserved_without_inference(self):
+        annotation = {"annotation_id": "supplied-event", "fact_type": "phase",
+                      "label_source": {"kind": "dataset_gold"},
+                      "alignment": {"kind": "interval", "start": 10, "end": 15,
+                                    "scope": "phase_interval", "source": "dataset_annotation",
+                                    "reference": "dataset/events/1"}}
+        self.rows[0]["qa"][0]["visual_fact_annotations"] = [annotation]
+        self.rows[0]["qa"][1]["start_time"] = 10  # Ambiguous fields do not create annotations.
+        rows = self.sources(self.run_inventory())
+        self.assertEqual(rows[0]["supervision"], [annotation])
+        self.assertEqual(rows[0]["question"], "Which tool?")
+        self.assertNotIn("supervision", rows[1])
+
     def test_test_partition_never_becomes_training_by_qa_parity(self):
         self.partitions[0]["split"] = "test"
         report = self.run_inventory()

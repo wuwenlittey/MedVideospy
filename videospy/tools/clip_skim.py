@@ -189,7 +189,6 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         }
     )
 
-    current_content = content
     memory_session = parameters.get("_visual_memory_session")
     if memory_session is not None:
         content = memory_session.augment(
@@ -201,12 +200,6 @@ def execute_clip_skim(config: dict, parameters: dict) -> str:
         messages=[{"role": "user", "content": content}]
     )
     observation = response["content"]
-    if memory_session is not None:
-        observation = memory_session.review(
-            current_content, original_observation=observation,
-            frames=memory_frames, timestamps=timestamps, parameters=parameters,
-            tool_name="clip_skim", tool_model=config["model"],
-        )
     if end_time < requested_end_time:
         interval_status = (
             f"Interval adjusted to video bounds: requested {start_time:.1f}s - "

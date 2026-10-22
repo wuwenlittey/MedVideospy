@@ -1,13 +1,16 @@
-# Same fact bank as visual_facts_inject.yml, plus one grounded comparison call.
+# Apply LAST after base/embedding configs. One observation call, no review.
+# Only externally labelled, explicitly aligned source facts are admitted.
 tools:
   visual_memory:
     enabled: true
-    usage_mode: review
+    usage_mode: inject
     mode: image_text
     match_mode: fact
-    allow_model_reviewed: true
-    database_path: output/visual_memory/facts_index_v2
+    allow_source_grounded: true
+    allow_model_reviewed: false
+    database_path: output/visual_memory/supervised_index_v3
     top_k: 2
+    # Candidate-ranking threshold, not a calibrated correctness probability.
     min_similarity: 0.0
     reference_frames: 16
     query_frames: 16
@@ -15,9 +18,6 @@ tools:
     max_calls_per_question: 4
     fail_open: true
     task_fact_types: {}
-    review:
-      model: {}
-      max_calls_per_question: 4
   memory_search:
     enabled: false
   clip_skim:

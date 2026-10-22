@@ -1,0 +1,6 @@
+# Offline assembly from existing correct labels/descriptions. No VLM settings.
+visual_fact_assembly:
+  max_images_per_fact: 16
+  max_facts_per_video_type: 20
+  max_total_facts: 1000
+  resume: false
